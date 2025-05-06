@@ -18,6 +18,7 @@ env:
   _target_: gflownet.envs.tree_acc.Tree 
   dataset: iris 
   split_seed: 1
+  results_path: "eval_results" # Path for saving evaluation results
   data_path: ${user.data.root}/${env.dataset}/${env.dataset}_${env.split_seed}.csv # Add desired data path
   max_depth: 3
   continuous: False

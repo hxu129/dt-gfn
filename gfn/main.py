@@ -120,6 +120,7 @@ def main(config):
     # Close logger
     gflownet.logger.end()
 
+    # FIXME: 没有helper这个函数，tree evaluation结果相关的函数没有给出
     if config.env._target_ == "gflownet.envs.tree_acc.Tree" and config.SAVE == True:
         from helper.get_tree_stats import (bayesian_model_averaging,
                                            calculate_tree_accuracies)
