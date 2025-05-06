@@ -28,6 +28,7 @@ from gflownet.utils.common import (batch_with_rest, bootstrap_samples,
                                    tfloat, tlong, torch2np)
 
 from gflownet.priors.prior_generation import calculate_average_similarity
+from gflownet.priors.gfn_trees import compare_trees
 
 from scipy.special import logsumexp
 from torch.cuda.amp import GradScaler, autocast
@@ -664,41 +665,7 @@ class GFlowNetAgent:
         flow_loss : float
             Loss of the intermediate nodes only
         """
-        Prior = torch.tensor([[ 0.0000e+00,  0.0000e+00,  6.0000e-01, -1.0000e+00,  0.0000e+00,
-                                      torch.nan,         torch.nan,         torch.nan],
-                              [ 0.0000e+00,  1.0000e+00,  6.0000e-01, -1.0000e+00,  0.0000e+00,
-                                      torch.nan,         torch.nan,         torch.nan],
-                              [ 0.0000e+00,  3.0000e+00,  4.0000e-01, -1.0000e+00,  0.0000e+00,
-                                      torch.nan,         torch.nan,         torch.nan],
-                              [ 0.0000e+00,  2.0000e+00,  8.0000e-01, -1.0000e+00,  0.0000e+00,
-                                      torch.nan,         torch.nan,         torch.nan],
-                              [ 0.0000e+00,  0.0000e+00,  6.0000e-01, -1.0000e+00,  0.0000e+00,
-                                      torch.nan,         torch.nan,         torch.nan],
-                              [ 0.0000e+00,  3.0000e+00,  9.0000e-01, -1.0000e+00,  0.0000e+00,
-                                      torch.nan,         torch.nan,         torch.nan],
-                              [ 0.0000e+00,  3.0000e+00,  7.0000e-01, -1.0000e+00,  0.0000e+00,
-                                      torch.nan,         torch.nan,         torch.nan],
-                              [ 1.0000e+00, -1.0000e+00, -1.0000e+00, -1.0000e+00,  0.0000e+00,
-                              4.2855e-01,  3.9123e-01,  1.8021e-01],
-                              [ 1.0000e+00, -1.0000e+00, -1.0000e+00, -1.0000e+00,  0.0000e+00,
-                              1.8400e-08,  1.3338e-03,  9.9867e-01],
-                              [ 1.0000e+00, -1.0000e+00, -1.0000e+00, -1.0000e+00,  0.0000e+00,
-                              9.6378e-01,  3.3917e-12,  3.6216e-02],
-                              [ 1.0000e+00, -1.0000e+00, -1.0000e+00, -1.0000e+00,  0.0000e+00,
-                              7.8626e-01,  2.1374e-01,  3.7204e-13],
-                              [ 1.0000e+00, -1.0000e+00, -1.0000e+00, -1.0000e+00,  0.0000e+00,
-                              1.4401e-06,  1.0000e+00,  1.9335e-06],
-                              [ 1.0000e+00, -1.0000e+00, -1.0000e+00, -1.0000e+00,  0.0000e+00,
-                              9.9728e-01,  1.0943e-03,  1.6216e-03],
-                              [ 1.0000e+00, -1.0000e+00, -1.0000e+00, -1.0000e+00,  0.0000e+00,
-                              7.6180e-07,  9.5417e-01,  4.5827e-02],
-                              [ 1.0000e+00, -1.0000e+00, -1.0000e+00, -1.0000e+00,  0.0000e+00,
-                              1.3005e-08,  8.4279e-07,  1.0000e+00],
-                              [ 0.0000e+00,         torch.nan,         torch.nan,         torch.nan,         torch.nan,
-                                      torch.nan,         torch.nan,         torch.nan]])
         Lambda = 1
-        class_str = ['c1','c2','c3']
-        feature_names = ['x1','x2','x3','x4','x5'] #(最后三个features是分类的probability)
         samples = batch.get_terminating_states()
         if self.env.dirichlet:
             samples = torch.stack(samples, dim=0)
@@ -706,14 +673,15 @@ class GFlowNetAgent:
         sim_scores = []
         for i, tree in enumerate(samples):
             print(i)
-            sim_scores.append(compare_trees(tree.numpy().tolist(),Prior.numpy().tolist(), 
-                                                           feature_names, 
-                                                           class_str, 
-                                                           [(0, 1), (0, 1), (0, 1), (0, 1), (0, 1)], 
-                                                           comp_dist=True, dist_weight=0.5))
+            print(tree.numpy().tolist())
+            sim_scores.append(calculate_average_similarity(
+                new_tree_numerical=tree.numpy().tolist(),
+                priors_json='/data/hzy/xh/dtfl/dt-gfn/dt-gfn/gfn/gflownet/priors/data/0506_090444/post-thrombotic syndrome/structural_priors.json',
+                comp_dist=True,
+                dist_weight=0.5
+            ))
         similarity = torch.tensor(sim_scores)    
         regular_term = torch.exp(Lambda * similarity)
-        ###
 
         # Get logprobs of forward and backward transitions
         logprobs_f = self.compute_logprobs_trajectories(batch, backward=False)

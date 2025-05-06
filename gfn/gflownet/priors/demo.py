@@ -33,12 +33,12 @@ avg_sim_default_bounds = calculate_average_similarity(
 )
 print(f"Average similarity (default bounds): {avg_sim_default_bounds:.4f}")
 
-# Using custom bounds
-avg_sim_custom_bounds = calculate_average_similarity(
-    new_tree_numerical=new_tree_numerical,
-    priors_json=priors_file,
-    comp_dist=True,
-    dist_weight=0.5,
-    bounds=custom_bounds
-)
-print(f"Average similarity (custom bounds): {avg_sim_custom_bounds:.4f}")
+# # Using custom bounds
+# avg_sim_custom_bounds = calculate_average_similarity(
+#     new_tree_numerical=new_tree_numerical,
+#     priors_json=priors_file,
+#     comp_dist=True,
+#     dist_weight=0.5,
+#     bounds=custom_bounds
+# )
+# print(f"Average similarity (custom bounds): {avg_sim_custom_bounds:.4f}")
