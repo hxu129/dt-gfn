@@ -4,8 +4,8 @@ import numpy as np
 import os
 from sklearn.metrics import accuracy_score, f1_score, classification_report
 from collections import defaultdict
-from gfn_trees import compare_trees
-from json_tree import process_json_trees
+from .gfn_trees import compare_trees
+from .json_tree import process_json_trees
 
 def predict_with_tree(tree, sample, debug=False):
     """

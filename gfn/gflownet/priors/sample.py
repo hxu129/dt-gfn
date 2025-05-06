@@ -3,7 +3,7 @@ import random
 import json
 import copy
 from collections import deque
-from graph_viz import plot_tree
+from .graph_viz import plot_tree
 from datetime import datetime
 import os
 from typing import Dict, List, Any

@@ -24,7 +24,7 @@ import sys
 
 # 导入各个模块的关键功能
 # 从 sample.py 导入
-from sample import (
+from .sample import (
     extract_disease_name, 
     convert_to_pointer_tree, 
     unfold_pointer_tree, 
@@ -36,7 +36,7 @@ from sample import (
 )
 
 # 从 data_gen.py 导入
-from data_gen import (
+from .data_gen import (
     extract_features_and_classes,
     find_path_to_leaf,
     get_leaf_nodes_by_class,
@@ -47,15 +47,17 @@ from data_gen import (
 )
 
 # 从 tree_evaluation.py 导入
-from tree_evaluation import (
+from .tree_evaluation import (
     predict_with_tree,
     count_internal_nodes,
     evaluate_trees
 )
 
 # 从 json_tree.py 和 gfn_trees.py 导入 (用于结构相似度计算)
-from json_tree import process_json_trees
-from gfn_trees import compare_trees
+from .json_tree import process_json_trees
+from .gfn_trees import compare_trees
+
+from .graph_viz import plot_tree
 
 def sample_and_generate_trees(
     dataset_path="all_trees.json",
@@ -238,7 +240,6 @@ def sample_and_generate_trees(
         # 绘制树 (仅当 plot_tree 函数可用时)
         print("尝试绘制树...")
         try:
-            from graph_viz import plot_tree
             plot_tree(subtrees_output_path)
             print("树绘制成功")
         except Exception as e:
