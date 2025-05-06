@@ -1,0 +1,20 @@
+# Cursor rules
+.devcontainer/*
+.vscode.example/*
+.cursor*
+
+# Devin's files
+tools/*
+venv/*
+.env
+README_devin.cursorrules.md
+
+# Cython files
+gfn/gflownet/build/*
+*.c
+*.cpp
+*.h
+*.hpp
+*.hxx
+*.h++
+*.h
