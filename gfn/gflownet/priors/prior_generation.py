@@ -54,7 +54,7 @@ from .tree_evaluation import (
 )
 
 # 从 json_tree.py 和 gfn_trees.py 导入 (用于结构相似度计算)
-from .json_tree import process_json_trees
+from .json_tree import process_json_trees, create_similarity_calculator
 from .gfn_trees import compare_trees
 
 from .graph_viz import plot_tree
@@ -545,7 +545,6 @@ def calculate_average_similarity(
     Returns:
         float: 与结构先验的平均相似度. 返回 0.0 如果无法计算（例如先验文件无效）。
     """
-    from json_tree import create_similarity_calculator
 
     # 创建相似度计算器 (这会处理先验树的加载和数值转换)
     print(f"创建相似度计算器，使用先验文件: {priors_json}")

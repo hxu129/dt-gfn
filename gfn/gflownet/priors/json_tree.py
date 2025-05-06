@@ -2,6 +2,8 @@ import json
 import numpy as np
 import os
 import pickle
+        
+from .gfn_trees import compare_trees
 
 def save_mappings(feature_map, class_map, output_dir='.'):
     """保存特征映射和类别映射到文件"""
@@ -207,7 +209,6 @@ def create_similarity_calculator(json_file_path, save_maps=True, output_dir='.')
         Returns:
             float: 平均相似度
         """
-        from gfn_trees import compare_trees
         
         if not valid_trees:
             print("No valid trees to compare with.")

@@ -1,5 +1,5 @@
 import numpy as np
-from prior_generation import calculate_average_similarity
+from .prior_generation import calculate_average_similarity
 # Assuming you have generated structural_priors.json previously
 # e.g., using a function like generate_structural_priors(...)
 
