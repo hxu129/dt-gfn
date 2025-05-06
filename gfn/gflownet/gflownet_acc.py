@@ -658,12 +658,12 @@ class GFlowNetAgent:
         Returns
         -------
         loss : float
-
         term_loss : float
             Loss of the terminal nodes only
-
         flow_loss : float
             Loss of the intermediate nodes only
+        mean_similarity : float
+            Mean structural similarity of the sampled trees in the batch.
         """
         Lambda = 1
         samples = batch.get_terminating_states()
@@ -671,30 +671,58 @@ class GFlowNetAgent:
             samples = torch.stack(samples, dim=0)
             samples = self.env._sample_proba_dirichlet(samples, test=False)
         sim_scores = []
-        for i, tree in enumerate(samples):
-            sim_scores.append(calculate_average_similarity(
-                new_tree_numerical=tree.numpy().tolist(),
-                priors_json='/data/hzy/xh/dtfl/dt-gfn/dt-gfn/gfn/gflownet/priors/data/0506_090444/post-thrombotic syndrome/structural_priors.json',
-                comp_dist=True,
-                dist_weight=0.5
-            ))
-        similarity = torch.tensor(sim_scores)    
-        regular_term = torch.exp(Lambda * similarity)
+        # TODO: The priors_json path is hardcoded here. This should ideally be configured.
+        # For now, using the path from the user's context.
+        priors_json_path = '/data/hzy/xh/dtfl/dt-gfn/dt-gfn/gfn/gflownet/priors/data/0506_090444/post-thrombotic syndrome/structural_priors.json'
+        if not os.path.exists(priors_json_path):
+            print(f"Warning: priors_json_path for similarity calculation does not exist: {priors_json_path}")
+            # If priors file doesn't exist, we can't calculate similarity.
+            # Return 0 or handle as an error. For now, let's return 0 for similarity.
+            mean_similarity = torch.tensor(0.0, device=self.device, dtype=self.float)
+        else:
+            for i, tree in enumerate(samples):
+                # Assuming tree is a tensor, convert to list for calculate_average_similarity
+                tree_numerical_list = tree.cpu().numpy().tolist() if isinstance(tree, torch.Tensor) else tree
+                sim_scores.append(calculate_average_similarity(
+                    new_tree_numerical=tree_numerical_list,
+                    priors_json=priors_json_path,
+                    comp_dist=True, # Assuming these are desired defaults
+                    dist_weight=0.5
+                ))
+        
+        if sim_scores:
+            similarity_tensor = torch.tensor(sim_scores, device=self.device, dtype=self.float)
+            mean_similarity = similarity_tensor.mean()
+            regular_term = torch.exp(Lambda * similarity_tensor)
+        else:
+            # Handle case where no sim_scores were computed (e.g. priors_json_path missing)
+            mean_similarity = torch.tensor(0.0, device=self.device, dtype=self.float)
+            regular_term = torch.ones(rewards.shape[0] if 'rewards' in locals() and isinstance(rewards, torch.Tensor) else 1, device=self.device, dtype=self.float)
+
 
         # Get logprobs of forward and backward transitions
         logprobs_f = self.compute_logprobs_trajectories(batch, backward=False)
         logprobs_b = self.compute_logprobs_trajectories(batch, backward=True)
         # Get rewards from batch
-        # rewards = batch.get_terminating_rewards(sort_by="trajectory").to(self.device) * regular_term.to(self.device)
-        rewards = regular_term.to(self.device)
+        rewards = batch.get_terminating_rewards(sort_by="trajectory").to(self.device)
+        
+        # Apply regularization term based on similarity
+        # Ensure regular_term matches the shape of rewards if it's not a scalar
+        if rewards.shape[0] == regular_term.shape[0]:
+            effective_rewards = rewards * regular_term
+        else: # If regular_term became scalar (e.g. no sim_scores), apply it as such or re-evaluate logic
+            print(f"Warning: Mismatch in shapes for rewards ({rewards.shape}) and regular_term ({regular_term.shape}). Defaulting to original rewards for loss.")
+            effective_rewards = rewards
+
+
         if self.logreward:
-            log_rewards = torch.log(rewards)
+            log_rewards = torch.log(effective_rewards)
         else:
-            log_rewards = rewards
+            log_rewards = effective_rewards
 
         # Trajectory balance loss
         loss = (self.logZ.sum() + logprobs_f - logprobs_b - log_rewards).pow(2).mean()
-        return loss, loss, loss
+        return loss, loss, loss, mean_similarity
 
     def detailedbalance_loss(self, it, batch):
         """
@@ -1020,17 +1048,25 @@ class GFlowNetAgent:
             for j in range(self.ttsr):
                 if self.loss == "flowmatch":
                     loss_func = self.flowmatch_loss
+                    with autocast(enabled=self.use_mixed_precision):
+                        losses = loss_func(it * self.ttsr + j, batch) # loss, term_loss, flow_loss
                 elif self.loss == "trajectorybalance":
                     loss_func = self.trajectorybalance_loss
+                    with autocast(enabled=self.use_mixed_precision):
+                        losses_and_sim = loss_func(it * self.ttsr + j, batch) # loss, term_loss, flow_loss, mean_similarity
+                        losses = losses_and_sim[:3]
+                        mean_sampled_similarity = losses_and_sim[3]
                 elif self.loss == "detailedbalance":
                     loss_func = self.detailedbalance_loss
+                    with autocast(enabled=self.use_mixed_precision):
+                        losses = loss_func(it * self.ttsr + j, batch) # loss, term_loss, nonterm_loss
                 elif self.loss == "forwardlooking":
                     loss_func = self.forwardlooking_loss
+                    with autocast(enabled=self.use_mixed_precision):
+                        losses = loss_func(it * self.ttsr + j, batch) # loss, term_loss, nonterm_loss
                 else:
                     raise ValueError("Unknown loss!")
 
-                with autocast(enabled=self.use_mixed_precision):
-                    losses = loss_func(it * self.ttsr + j, batch)
 
                 if not all([torch.isfinite(loss) for loss in losses]):
                     if self.logger.debug:
@@ -1095,14 +1131,20 @@ class GFlowNetAgent:
                 )
             # Train logs
             t0_log = time.time()
+            train_metrics_to_log = {
+                "losses": losses,
+                "rewards": rewards,
+                "proxy_vals": proxy_vals,
+                "states_term": states_term,
+                "batch_size": len(batch),
+                "logz": self.logZ,
+                "learning_rates": self.lr_scheduler.get_last_lr(),
+            }
+            if self.loss == "trajectorybalance" and 'mean_sampled_similarity' in locals():
+                train_metrics_to_log["mean_sampled_structural_similarity"] = mean_sampled_similarity.item()
+
             self.logger.log_train(
-                losses=losses,
-                rewards=rewards,
-                proxy_vals=proxy_vals,
-                states_term=states_term,
-                batch_size=len(batch),
-                logz=self.logZ,
-                learning_rates=self.lr_scheduler.get_last_lr(),
+                **train_metrics_to_log,
                 step=it,
                 use_context=self.use_context,
             )

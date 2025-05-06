@@ -221,6 +221,7 @@ class Logger:
         learning_rates: list,  # [lr, lr_logZ]
         step: int,
         use_context: bool,
+        mean_sampled_structural_similarity: float = None,
     ):
         if not self.do.online or not self.do_train(step):
             return
@@ -230,36 +231,39 @@ class Logger:
             logz = logz.sum()
         if len(learning_rates) == 1:
             learning_rates += [-1.0]
-        train_metrics = dict(
-            zip(
-                [
-                    "mean_reward",
-                    "max_reward",
-                    "mean_proxy",
-                    "min_proxy",
-                    "max_proxy",
-                    "mean_seq_length",
-                    "batch_size",
-                    "logZ",
-                    "lr",
-                    "lr_logZ",
-                    "step",
-                ],
-                [
-                    np.mean(rewards),
-                    np.max(rewards),
-                    np.mean(proxy_vals),
-                    np.min(proxy_vals),
-                    np.max(proxy_vals),
-                    np.mean([len(state) for state in states_term]),
-                    batch_size,
-                    logz,
-                    learning_rates[0],
-                    learning_rates[1],
-                    step,
-                ],
-            )
-        )
+        train_metrics_keys = [
+            "mean_reward",
+            "max_reward",
+            "mean_proxy",
+            "min_proxy",
+            "max_proxy",
+            "mean_seq_length",
+            "batch_size",
+            "logZ",
+            "lr",
+            "lr_logZ",
+            "step",
+        ]
+        train_metrics_values = [
+            np.mean(rewards),
+            np.max(rewards),
+            np.mean(proxy_vals),
+            np.min(proxy_vals),
+            np.max(proxy_vals),
+            np.mean([len(state) for state in states_term]),
+            batch_size,
+            logz,
+            learning_rates[0],
+            learning_rates[1],
+            step,
+        ]
+        
+        if mean_sampled_structural_similarity is not None:
+            train_metrics_keys.append("mean_sampled_structural_similarity")
+            train_metrics_values.append(mean_sampled_structural_similarity)
+            
+        train_metrics = dict(zip(train_metrics_keys, train_metrics_values))
+            
         self.log_metrics(
             train_metrics,
             use_context=use_context,
