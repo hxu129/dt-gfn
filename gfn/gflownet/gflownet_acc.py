@@ -670,31 +670,15 @@ class GFlowNetAgent:
         if self.env.dirichlet:
             samples = torch.stack(samples, dim=0)
             samples = self.env._sample_proba_dirichlet(samples, test=False)
-        
-        # Convert samples to the numerical format required by calculate_average_similarity
-        # Assuming samples is a list of tensors, or a tensor that can be iterated
-        numerical_samples_batch = []
-        if isinstance(samples, torch.Tensor):
-            # If samples is a single tensor representing a batch of trees
-            # (e.g., shape [batch_size, num_nodes, num_features_per_node])
-            # This part depends heavily on the actual structure of 'samples'
-            # For now, assuming it's a list of tensors, one per tree, as per original loop
-            for tree_tensor in samples:
-                numerical_samples_batch.append(tree_tensor.cpu().numpy().tolist()) # Ensure it's on CPU for numpy
-        else: # Assuming samples is already a list of state representations (e.g. list of tensors)
-            for tree_tensor in samples:
-                 # Convert each tree (tensor) in the batch to numpy list
-                numerical_samples_batch.append(tree_tensor.cpu().numpy().tolist())
-
-        sim_scores_list = calculate_average_similarity(
-            new_tree_numerical=numerical_samples_batch, # Pass the batch
-            priors_json='/data/hzy/xh/dtfl/dt-gfn/dt-gfn/gfn/gflownet/priors/data/0506_090444/post-thrombotic syndrome/structural_priors.json',
-            comp_dist=True,
-            dist_weight=0.5
-        )
-        # Convert the list of scores to a tensor
-        similarity = torch.tensor(sim_scores_list, device=self.device, dtype=self.float)
-
+        sim_scores = []
+        for i, tree in enumerate(samples):
+            sim_scores.append(calculate_average_similarity(
+                new_tree_numerical=tree.numpy().tolist(),
+                priors_json='/data/hzy/xh/dtfl/dt-gfn/dt-gfn/gfn/gflownet/priors/data/0506_090444/post-thrombotic syndrome/structural_priors.json',
+                comp_dist=True,
+                dist_weight=0.5
+            ))
+        similarity = torch.tensor(sim_scores)    
         regular_term = torch.exp(Lambda * similarity)
 
         # Get logprobs of forward and backward transitions

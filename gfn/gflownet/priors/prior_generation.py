@@ -533,10 +533,9 @@ def calculate_average_similarity(
     计算新树（数值格式）与结构先验集的平均相似度
 
     Args:
-        new_tree_numerical (list or np.ndarray or list of list/np.ndarray): 
-            新树，格式为数值列表的列表 (gfn_trees.py main中的格式), 或一批这样的树。
-            **重要**: 此树必须使用与 priors_json 文件
-            相同的特征和类别映射进行编码。
+        new_tree_numerical (list or np.ndarray): 新树，格式为数值列表的列表 (gfn_trees.py main中的格式).
+                                                 **重要**: 此树必须使用与 priors_json 文件
+                                                 相同的特征和类别映射进行编码。
         priors_json (str): 结构先验的 JSON 文件路径.
         comp_dist (bool): 是否比较标签分布.
         dist_weight (float): 标签分布差异的权重.
@@ -544,44 +543,33 @@ def calculate_average_similarity(
                                  如果为 None，将在 compare_trees 中使用默认值。
 
     Returns:
-        float or list of float: 与结构先验的平均相似度 (如果输入是单个树)
-                                或平均相似度列表 (如果输入是一批树).
-                                返回 0.0 或 [0.0, ...] 如果无法计算。
+        float: 与结构先验的平均相似度. 返回 0.0 如果无法计算（例如先验文件无效）。
     """
 
     # 创建相似度计算器 (这会处理先验树的加载和数值转换)
-    # print(f"创建相似度计算器，使用先验文件: {priors_json}") # Reduced verbosity
+    print(f"创建相似度计算器，使用先验文件: {priors_json}")
     try:
-        # Pass max_workers, e.g., from an environment variable or config
-        # For now, let it default or be None if not specified elsewhere
-        similarity_calculator = create_similarity_calculator(priors_json, save_maps=False, max_workers=os.cpu_count())
+        similarity_calculator = create_similarity_calculator(priors_json, save_maps=False)
     except FileNotFoundError:
         print(f"错误: 先验文件 {priors_json} 未找到。")
-        if isinstance(new_tree_numerical, list) and (not new_tree_numerical or isinstance(new_tree_numerical[0], list)):
-            # crude check for batch
-            return [0.0] * len(new_tree_numerical)
         return 0.0
     except Exception as e:
         print(f"错误: 创建相似度计算器时出错: {e}")
-        if isinstance(new_tree_numerical, list) and (not new_tree_numerical or isinstance(new_tree_numerical[0], list)):
-            return [0.0] * len(new_tree_numerical)
         return 0.0
 
     # 直接使用预处理的 new_tree_numerical 调用计算器
-    # print("计算与先验树的平均相似度...") # Reduced verbosity
+    print("计算与先验树的平均相似度...")
     try:
-        similarity_scores = similarity_calculator(
-            input_data=new_tree_numerical, # Pass as input_data
+        similarity = similarity_calculator(
+            input_tree=new_tree_numerical,
             comp_dist=comp_dist,
             dist_weight=dist_weight, 
             bounds=bounds
         )
-        # print(f"平均相似度计算结果: {similarity_scores}") # Reduced verbosity
-        return similarity_scores
+        print(f"平均相似度计算结果: {similarity:.4f}")
+        return similarity
     except Exception as e:
         print(f"错误: 计算相似度时出错: {e}")
-        if isinstance(new_tree_numerical, list) and (not new_tree_numerical or isinstance(new_tree_numerical[0], list)):
-             return [0.0] * len(new_tree_numerical)
         return 0.0
 
 def run_complete_pipeline(
