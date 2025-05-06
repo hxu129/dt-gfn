@@ -18,3 +18,23 @@ gfn/gflownet/build/*
 *.hxx
 *.h++
 *.h
+*.so
+
+# Pycache
+*/__pycache__/*
+*.pyc
+*.pyo
+*.pyd
+*.pyw
+*.pyz
+
+# Prior files
+gfn/gflownet/priors/data/*
+
+# Dataset
+data/iris/*
+
+# Logs
+logs/*
+gfn/None/*
+gfn/wandb/*

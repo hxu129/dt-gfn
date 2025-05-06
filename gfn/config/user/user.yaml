@@ -1,5 +1,5 @@
 logdir:
-  root: # Add log directory
+  root: /data/hzy/xh/dtfl/dt-gfn/dt-gfn/logs
 
 data: 
-  root: # Add data directory
+  root: /data/hzy/xh/dtfl/dt-gfn/dt-gfn/data

@@ -26,6 +26,9 @@ from gflownet.utils.buffer import Buffer
 from gflownet.utils.common import (batch_with_rest, bootstrap_samples,
                                    set_device, set_float_precision, tbool,
                                    tfloat, tlong, torch2np)
+
+# from gflownet.priors.prior_generation import calculate_average_similarity
+
 from scipy.special import logsumexp
 from torch.cuda.amp import GradScaler, autocast
 from torch.distributions import Bernoulli
