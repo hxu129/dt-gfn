@@ -672,8 +672,6 @@ class GFlowNetAgent:
             samples = self.env._sample_proba_dirichlet(samples, test=False)
         sim_scores = []
         for i, tree in enumerate(samples):
-            print(i)
-            print(tree.numpy().tolist())
             sim_scores.append(calculate_average_similarity(
                 new_tree_numerical=tree.numpy().tolist(),
                 priors_json='/data/hzy/xh/dtfl/dt-gfn/dt-gfn/gfn/gflownet/priors/data/0506_090444/post-thrombotic syndrome/structural_priors.json',
@@ -687,7 +685,8 @@ class GFlowNetAgent:
         logprobs_f = self.compute_logprobs_trajectories(batch, backward=False)
         logprobs_b = self.compute_logprobs_trajectories(batch, backward=True)
         # Get rewards from batch
-        rewards = batch.get_terminating_rewards(sort_by="trajectory") * regular_term.cuda()
+        # rewards = batch.get_terminating_rewards(sort_by="trajectory").to(self.device) * regular_term.to(self.device)
+        rewards = regular_term.to(self.device)
         if self.logreward:
             log_rewards = torch.log(rewards)
         else:

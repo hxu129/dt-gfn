@@ -20,7 +20,7 @@ env:
   split_seed: 1
   results_path: "eval_results" # Path for saving evaluation results
   data_path: ${user.data.root}/${env.dataset}/${env.dataset}_${env.split_seed}.csv # Add desired data path
-  max_depth: 3
+  max_depth: 9
   continuous: False
   dirichlet: True
   mask_redundant_choices: True

@@ -438,9 +438,6 @@ def compare_trees(tree1, tree2, feature_names, classes_, bounds=None, comp_dist=
     # 对每个特征应用替换函数 (using the determined bounds)
     branches1 = branches1.apply(lambda series: replace_inf_with_bounds(series, bounds))
     branches2 = branches2.apply(lambda series: replace_inf_with_bounds(series, bounds))
-    print(branches1)
-    print(branches2)
-    print()
 
     similarity_matrix = np.zeros((len(branches1), len(branches2)))
     for i in range(len(branches1)):
@@ -473,23 +470,22 @@ def compare_trees(tree1, tree2, feature_names, classes_, bounds=None, comp_dist=
     row_ind, col_ind = new_row_ind, new_col_ind
     unmapped_branches1_indices.update(set(range(len(branches1))) - set(row_ind))  
     unmapped_branches2_indices.update(set(range(len(branches2))) - set(col_ind))
-    print(similarity_matrix)
-    print(row_ind, col_ind)
-    print(unmapped_branches1_indices, unmapped_branches2_indices)
+
     # 用最大可能相似度，近似计算 unmapped branches 的损失
     penalty = 0
     for i in unmapped_branches1_indices:
         penalty += np.max(similarity_matrix[i])
-        print(np.max(similarity_matrix[i]))
     for j in unmapped_branches2_indices:
         penalty += np.max(similarity_matrix[:, j])
-        print(np.max(similarity_matrix[:, j]))
 
     # 计算匹配的平均相似度
     total_similarity = 0
     for i, j in zip(row_ind, col_ind):
         total_similarity += similarity_matrix[i, j]
     average_similarity = 2 * (total_similarity - penalty) / (len(branches1) + len(branches2))
+
+    print(f"平均相似度是{average_similarity}, 惩罚是{penalty}")
+    print(f"branch1 规则数是{len(branches1)}, branch2 规则数是{len(branches2)}")
     
     return average_similarity
 
