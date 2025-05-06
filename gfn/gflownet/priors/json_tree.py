@@ -2,6 +2,7 @@ import json
 import numpy as np
 import os
 import pickle
+from concurrent.futures import ProcessPoolExecutor, as_completed
         
 from .gfn_trees import compare_trees
 
@@ -172,7 +173,35 @@ def process_json_trees(json_file_path, save_maps=True, output_dir='.'):
     
     return processed_trees, feature_names, classes_
 
-def create_similarity_calculator(json_file_path, save_maps=True, output_dir='.'):
+def _calculate_similarity_for_single_input(input_tree_args):
+    """Helper function to calculate similarity for a single input tree against all valid_trees."""
+    input_tree, valid_trees, feature_names, classes_, comp_dist, dist_weight, bounds = input_tree_args
+    
+    if not input_tree: # Handle case where an input_tree might be empty/invalid
+        return 0.0
+    if not valid_trees:
+        return 0.0
+
+    similarities_for_one_input_tree = []
+    for prior_tree in valid_trees:
+        similarity = compare_trees(
+            tree1=input_tree,
+            tree2=prior_tree,
+            feature_names=feature_names,
+            classes_=classes_,
+            bounds=bounds,
+            comp_dist=comp_dist,
+            dist_weight=dist_weight
+        )
+        similarities_for_one_input_tree.append(similarity)
+    
+    if not similarities_for_one_input_tree:
+        return 0.0
+    else:
+        average_similarity = sum(similarities_for_one_input_tree) / len(similarities_for_one_input_tree)
+        return average_similarity
+
+def create_similarity_calculator(json_file_path, save_maps=True, output_dir='.', max_workers=None):
     """
     创建一个函数，用于计算输入树与JSON文件中所有树的平均相似度
     
@@ -180,9 +209,11 @@ def create_similarity_calculator(json_file_path, save_maps=True, output_dir='.')
         json_file_path (str): JSON文件路径，包含要比较的树
         save_maps (bool): 是否保存特征和类别映射到文件
         output_dir (str): 保存映射的目录
+        max_workers (int, optional): Maximum number of processes for parallel execution.
+                                     Defaults to None (os.cpu_count()).
         
     Returns:
-        function: 一个函数，接受一个树作为输入，返回其与JSON文件中所有树的平均相似度
+        function: 一个函数，接受一个树或一批树作为输入，返回其与JSON文件中所有树的平均相似度(或相似度列表)
     """
     # 预处理JSON文件中的树
     processed_trees, feature_names, classes_ = process_json_trees(json_file_path, save_maps, output_dir)
@@ -191,55 +222,71 @@ def create_similarity_calculator(json_file_path, save_maps=True, output_dir='.')
     valid_trees = [tree for tree in processed_trees if tree]
     
     if not valid_trees:
-        print("Warning: No valid trees found in JSON file.")
-        
-    print(f"Loaded {len(valid_trees)} valid trees for similarity calculation.")
+        print("Warning: No valid trees found in JSON file for similarity calculation.")
+        # Return a dummy calculator if no valid prior trees
+        def dummy_calculator(input_data, comp_dist=True, dist_weight=0.5, bounds=None):
+            if isinstance(input_data, list) and (not input_data or isinstance(input_data[0], list) and (not input_data[0] or isinstance(input_data[0][0], list))): # Check if it's a batch
+                return [0.0] * len(input_data)
+            return 0.0
+        return dummy_calculator
+            
+    # print(f"Loaded {len(valid_trees)} valid trees for similarity calculation.") # Reduced verbosity
     
     # 创建比较函数
-    def calculate_average_similarity(input_tree, comp_dist=True, dist_weight=0.5, bounds=None):
+    def calculate_similarity_batch_or_single(input_data, comp_dist=True, dist_weight=0.5, bounds=None):
         """
-        计算输入树与JSON文件中所有树的平均相似度
+        计算输入树(或一批树)与JSON文件中所有树的平均相似度
         
         Args:
-            input_tree (list): 输入树，格式与gfn_trees.py中的tree1/tree2相同
+            input_data (list or list of lists): 输入树 (gfn_trees format) 或一批输入树.
             comp_dist (bool): 是否比较标签分布
             dist_weight (float): 标签分布差异的权重
             bounds (list, optional): 特征边界。如果为 None，将在 compare_trees 中使用默认值。
             
         Returns:
-            float: 平均相似度
+            float or list of floats: 平均相似度或平均相似度列表
         """
         
+        is_batch = isinstance(input_data, list) and \
+                   (not input_data or (isinstance(input_data[0], list) and \
+                                       (not input_data[0] or isinstance(input_data[0][0], (list, np.ndarray)))))
+
+
+        if not is_batch:
+            input_trees_batch = [input_data] # Treat single tree as a batch of one
+        else:
+            input_trees_batch = input_data
+
         if not valid_trees:
-            print("No valid trees to compare with.")
-            return 0.0
-            
-        # 定义特征边界（默认为0-1）
-        # Let compare_trees handle default bounds if bounds is None
-        # bounds = bounds if bounds is not None else [(0, 1) for _ in range(len(feature_names))]
+            # print("No valid trees to compare with.") # Reduced verbosity
+            results = [0.0] * len(input_trees_batch)
+            return results[0] if not is_batch else results
+
+        results = [None] * len(input_trees_batch)
         
-        # 计算输入树与每棵树的相似度
-        similarities = []
-        for tree in valid_trees:
-            similarity = compare_trees(
-                tree1=input_tree,
-                tree2=tree,
-                feature_names=feature_names,
-                classes_=classes_,
-                bounds=bounds,
-                comp_dist=comp_dist,
-                dist_weight=dist_weight
-            )
-            similarities.append(similarity)
-            
-        # 计算平均相似度
-        if not similarities:
-             return 0.0
-        average_similarity = sum(similarities) / len(similarities)
-        
-        return average_similarity
+        # Prepare arguments for parallel processing
+        tasks = []
+        for i, input_tree in enumerate(input_trees_batch):
+            tasks.append(((input_tree, valid_trees, feature_names, classes_, comp_dist, dist_weight, bounds), i))
+
+        # Use ProcessPoolExecutor for parallel execution
+        # Note: This creates a new pool for each call to calculate_similarity_batch_or_single.
+        # For frequent calls, consider managing the pool externally or using a ThreadPoolExecutor
+        # if compare_trees is IO-bound or releases GIL (NumPy operations might release GIL).
+        # Given compare_trees is likely CPU-bound with NumPy, ProcessPoolExecutor is safer.
+        with ProcessPoolExecutor(max_workers=max_workers) as executor:
+            future_to_index = {executor.submit(_calculate_similarity_for_single_input, task_args[0]): task_args[1] for task_args in tasks}
+            for future in as_completed(future_to_index):
+                original_index = future_to_index[future]
+                try:
+                    results[original_index] = future.result()
+                except Exception as exc:
+                    print(f'Generated an exception: {exc} for input at original index {original_index}')
+                    results[original_index] = 0.0 # Default to 0 on error
+
+        return results[0] if not is_batch else results
     
-    return calculate_average_similarity
+    return calculate_similarity_batch_or_single
 
 if __name__ == "__main__":
     json_file_path = 'generated_subtrees.json'
