@@ -344,7 +344,7 @@ def compare_trees(tree1, tree2, feature_names, classes_, bounds=None, comp_dist=
     
         numpy_tree = []
         for node in tree:
-        
+
             # Convert list to numpy array and pad with NaN
             node_array = np.full(len(node), np.nan)
             for i, val in enumerate(node):
@@ -370,8 +370,26 @@ def compare_trees(tree1, tree2, feature_names, classes_, bounds=None, comp_dist=
         # 比较两个 branch 的structural similarity
         dist_similarity = 0
         if comp_dist:
+            # Preprocess probabilities to ensure they are valid distributions
+            probas1 = np.array(branch1["probas"], dtype=np.float64)
+            probas2 = np.array(branch2["probas"], dtype=np.float64)
+
+            for i in range(len(probas1)):
+                if probas1[i] < 0 or probas2[i] < 0:
+                    raise ValueError("概率不能为负")
+                if np.isnan(probas1[i]) or np.isnan(probas2[i]):
+                    raise ValueError("概率不能为nan")
+
             # Compare the distribution of the class labels
-            dist_similarity = 1 - jensenshannon(branch1["probas"], branch2["probas"], base=2)
+            epsilon = 1e-9
+            js_div = jensenshannon(probas1, probas2, base=2)
+            if np.isnan(js_div): # If jensenshannon still returns NaN (e.g., if a probas was all zeros)
+                probas1 += epsilon
+                probas2 += epsilon
+                js_div = jensenshannon(probas1, probas2, base=2)
+            if np.isnan(js_div):
+                raise ValueError("jensenshannon返回nan")
+            dist_similarity = 1 - js_div
         else:
             # step 1: compare the class label
             class_label_1 = np.argmax(branch1["probas"])
@@ -460,6 +478,7 @@ def compare_trees(tree1, tree2, feature_names, classes_, bounds=None, comp_dist=
     # 计算 unmapped branches
     unmapped_branches1_indices = set()
     unmapped_branches2_indices = set()
+
     # 去掉 penalty_matrix 的影响
     new_row_ind, new_col_ind = [], []
     for r,c in zip(row_ind, col_ind):
@@ -530,6 +549,15 @@ def compare_trees_average(tree1, trees_file_path, feature_names, classes_, bound
 
     similarity_scores = []
     for tree_from_file in list_of_trees:
+        node_len = 0
+        for i, node in enumerate(tree_from_file):
+            if isinstance(node, list):
+                node_len = len(node)
+                for j, element in enumerate(node):
+                    if element is None:
+                        tree_from_file[i][j] = np.nan
+            if node is None:
+                tree_from_file[i] = np.full(node_len, np.nan)
         similarity = compare_trees(
             tree1, tree_from_file, feature_names=feature_names, classes_=classes_,
             bounds=bounds, comp_dist=comp_dist, dist_weight=dist_weight
