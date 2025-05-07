@@ -28,7 +28,7 @@ from gflownet.utils.common import (batch_with_rest, bootstrap_samples,
                                    tfloat, tlong, torch2np)
 
 from gflownet.priors.prior_generation import calculate_average_similarity
-from gflownet.priors.gfn_trees import compare_trees
+from gflownet.priors.gfn_trees import compare_trees, compare_trees_average
 
 from scipy.special import logsumexp
 from torch.cuda.amp import GradScaler, autocast
@@ -673,7 +673,7 @@ class GFlowNetAgent:
         sim_scores = []
         # TODO: The priors_json path is hardcoded here. This should ideally be configured.
         # For now, using the path from the user's context.
-        priors_json_path = '/data/hzy/xh/dtfl/dt-gfn/dt-gfn/gfn/gflownet/priors/data/0507_042729/NSCLC/structural_priors.json'
+        priors_json_path = '/data/hzy/xh/dtfl/dt-gfn/dt-gfn/data/iris/iris_prior_trees_for_compare.json'
         for i, tree in enumerate(samples):
             # Assuming tree is a tensor, convert to list for calculate_average_similarity
             tree_numerical_list = tree.cpu().numpy().tolist() if isinstance(tree, torch.Tensor) else tree
@@ -688,9 +688,9 @@ class GFlowNetAgent:
             feature_names = ['feature_0', 'feature_1', 'feature_2', 'feature_3']
             classes_ = ['class_0', 'class_1', 'class_2']
             bounds = [(4.3, 7.9), (2.0, 4.4), (1.0, 7.0), (0.1, 2.5)]
-            sim_scores.append(compare_trees(
+            sim_scores.append(compare_trees_average(
                 tree1=tree_numerical_list,
-                tree2=tree_numerical_list,
+                trees_file_path=priors_json_path,
                 feature_names=feature_names,
                 classes_=classes_,
                 bounds=bounds,
@@ -714,9 +714,14 @@ class GFlowNetAgent:
         # Get rewards from batch
         rewards = batch.get_terminating_rewards(sort_by="trajectory").to(self.device)
         
-        # effective_rewards = rewards * regular_term
-        # effective_rewards = rewards
-        effective_rewards = regular_term
+        flag = 'data_prior'
+
+        if flag == 'data_prior':
+            effective_rewards = rewards * regular_term
+        elif flag == 'data':
+            effective_rewards = rewards
+        elif flag == 'prior':
+            effective_rewards = regular_term
 
         if self.logreward:
             log_rewards = torch.log(effective_rewards)
