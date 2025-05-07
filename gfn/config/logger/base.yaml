@@ -46,4 +46,4 @@ debug: False
 lightweight: False
 progress: True
 context: "0"
-notes: "data_prior" # wandb run notes (e.g. "baseline")
+notes: "default" # wandb run notes (e.g. "baseline")
