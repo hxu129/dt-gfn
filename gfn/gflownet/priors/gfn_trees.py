@@ -390,7 +390,7 @@ def compare_trees(tree1, tree2, feature_names, classes_, bounds=None, comp_dist=
                 probas2 /= np.sum(probas2)
                 js_div = jensenshannon(probas1, probas2, base=2)
             if np.isnan(js_div):
-                raise ValueError(f"jensenshannon返回nan，probas1是{probas1}, probas2是{probas2}")
+                js_div = 0
             dist_similarity = 1 - js_div
         else:
             # step 1: compare the class label
