@@ -11,7 +11,7 @@ defaults:
 device: gpu
 float_precision: 32
 n_samples: 1
-SAVE: False
+SAVE: True
 
 # Environment
 env:
@@ -27,7 +27,7 @@ env:
   reward_func: dummy
   prior: [.1, .1, .1]
   n_classes: 3
-  n_thresholds: 9
+  n_thresholds: 1
   policy_format: mlp
   threshold_components: 3
   test_args:

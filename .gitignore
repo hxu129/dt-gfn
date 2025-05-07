@@ -19,6 +19,7 @@ gfn/gflownet/build/*
 *.h++
 *.h
 *.so
+*egg-info
 
 # Pycache
 */__pycache__/*

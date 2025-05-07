@@ -235,6 +235,9 @@ def save_samples_to_csv(samples, features, class_indices, output_path):
     
     # 创建DataFrame
     df = pd.DataFrame(df_data, columns=column_names)
+
+    # 随机化样本顺序
+    df = df.sample(frac=1).reset_index(drop=True)
     
     # 保存为CSV
     df.to_csv(output_path, index=False)

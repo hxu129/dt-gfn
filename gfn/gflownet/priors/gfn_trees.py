@@ -2,6 +2,7 @@ import numpy as np
 from scipy.optimize import linear_sum_assignment
 from scipy.spatial.distance import jensenshannon
 import pandas as pd
+import json
 
 class SimpleBranch:
     def __init__(self, feature_names, classes_, label_probas=None, number_of_samples=0):
@@ -489,7 +490,65 @@ def compare_trees(tree1, tree2, feature_names, classes_, bounds=None, comp_dist=
     
     return average_similarity
 
+def compare_trees_average(tree1, trees_file_path, feature_names, classes_, bounds=None, comp_dist=False, dist_weight=0.5):
+    """
+    Compares a given tree (tree1) with a list of trees from a file and returns the average similarity.
 
+    Args:
+        tree1: The first numerical tree (list of lists or similar structure).
+        trees_file_path: Path to a JSON file containing a list of numerical trees.
+        feature_names: List of feature names.
+        classes_: List of class names.
+        bounds: Optional list of (min, max) tuples for feature bounds.
+        comp_dist: Boolean, whether to compare label distribution.
+        dist_weight: Float, weight for distribution difference in similarity.
+
+    Returns:
+        float: The average similarity score. Returns 0.0 if the file is empty, cannot be read,
+               or contains no valid trees, or if all comparisons result in NaN.
+    """
+    try:
+        with open(trees_file_path, 'r') as f:
+            list_of_trees = json.load(f)
+    except FileNotFoundError:
+        print(f"Error: Trees file not found at {trees_file_path}")
+        return 0.0
+    except json.JSONDecodeError:
+        print(f"Error: Could not decode JSON from {trees_file_path}")
+        return 0.0
+    except Exception as e: # Catch other potential IO errors
+        print(f"An unexpected error occurred while reading {trees_file_path}: {e}")
+        return 0.0
+
+    if not isinstance(list_of_trees, list):
+        print(f"Error: Content of {trees_file_path} is not a list.")
+        return 0.0
+    
+    if not list_of_trees: # Handles empty list
+        print(f"Warning: No trees found in {trees_file_path}. Returning 0.0 average similarity.")
+        return 0.0
+
+    similarity_scores = []
+    for tree_from_file in list_of_trees:
+        similarity = compare_trees(
+            tree1, tree_from_file, feature_names=feature_names, classes_=classes_,
+            bounds=bounds, comp_dist=comp_dist, dist_weight=dist_weight
+        )
+        # Ensure that compare_trees returns a float, or handle potential NaNs/non-floats
+        if isinstance(similarity, (float, int)) and not np.isnan(similarity):
+            similarity_scores.append(float(similarity))
+        else:
+            print(f"Warning: compare_trees returned an invalid similarity value ({similarity}) for a tree in {trees_file_path}. Skipping this tree.")
+
+
+    if not similarity_scores: # If all trees in file led to invalid similarities
+        print(f"Warning: No valid similarity scores could be computed from trees in {trees_file_path}. Returning 0.0 average similarity.")
+        return 0.0
+    
+    average_similarity = np.mean(similarity_scores)
+    
+    # np.mean of floats should be float. If list was empty, it's handled by the check above.
+    return float(average_similarity)
 
 if __name__ == "__main__":
     # bound 貌似是(0, 1)，你暂且就按照全是(0,1)来处理但也要能处理nan

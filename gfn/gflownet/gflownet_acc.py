@@ -673,22 +673,30 @@ class GFlowNetAgent:
         sim_scores = []
         # TODO: The priors_json path is hardcoded here. This should ideally be configured.
         # For now, using the path from the user's context.
-        priors_json_path = '/data/hzy/xh/dtfl/dt-gfn/dt-gfn/gfn/gflownet/priors/data/0506_090444/post-thrombotic syndrome/structural_priors.json'
-        if not os.path.exists(priors_json_path):
-            print(f"Warning: priors_json_path for similarity calculation does not exist: {priors_json_path}")
-            # If priors file doesn't exist, we can't calculate similarity.
-            # Return 0 or handle as an error. For now, let's return 0 for similarity.
-            mean_similarity = torch.tensor(0.0, device=self.device, dtype=self.float)
-        else:
-            for i, tree in enumerate(samples):
-                # Assuming tree is a tensor, convert to list for calculate_average_similarity
-                tree_numerical_list = tree.cpu().numpy().tolist() if isinstance(tree, torch.Tensor) else tree
-                sim_scores.append(calculate_average_similarity(
-                    new_tree_numerical=tree_numerical_list,
-                    priors_json=priors_json_path,
-                    comp_dist=True, # Assuming these are desired defaults
-                    dist_weight=0.5
-                ))
+        priors_json_path = '/data/hzy/xh/dtfl/dt-gfn/dt-gfn/gfn/gflownet/priors/data/0507_042729/NSCLC/structural_priors.json'
+        for i, tree in enumerate(samples):
+            # Assuming tree is a tensor, convert to list for calculate_average_similarity
+            tree_numerical_list = tree.cpu().numpy().tolist() if isinstance(tree, torch.Tensor) else tree
+            # sim_scores.append(calculate_average_similarity(
+            #     new_tree_numerical=tree_numerical_list,
+            #     priors_json=priors_json_path,
+            #     comp_dist=True, # Assuming these are desired defaults
+            #     dist_weight=0.5
+            # ))
+
+            # Data for iris dataset
+            feature_names = ['feature_0', 'feature_1', 'feature_2', 'feature_3']
+            classes_ = ['class_0', 'class_1', 'class_2']
+            bounds = [(4.3, 7.9), (2.0, 4.4), (1.0, 7.0), (0.1, 2.5)]
+            sim_scores.append(compare_trees(
+                tree1=tree_numerical_list,
+                tree2=tree_numerical_list,
+                feature_names=feature_names,
+                classes_=classes_,
+                bounds=bounds,
+                comp_dist=True,
+                dist_weight=0.5
+            ))
         
         if sim_scores:
             similarity_tensor = torch.tensor(sim_scores, device=self.device, dtype=self.float)
@@ -706,14 +714,9 @@ class GFlowNetAgent:
         # Get rewards from batch
         rewards = batch.get_terminating_rewards(sort_by="trajectory").to(self.device)
         
-        # Apply regularization term based on similarity
-        # Ensure regular_term matches the shape of rewards if it's not a scalar
-        if rewards.shape[0] == regular_term.shape[0]:
-            effective_rewards = rewards * regular_term
-        else: # If regular_term became scalar (e.g. no sim_scores), apply it as such or re-evaluate logic
-            print(f"Warning: Mismatch in shapes for rewards ({rewards.shape}) and regular_term ({regular_term.shape}). Defaulting to original rewards for loss.")
-            effective_rewards = rewards
-
+        # effective_rewards = rewards * regular_term
+        # effective_rewards = rewards
+        effective_rewards = regular_term
 
         if self.logreward:
             log_rewards = torch.log(effective_rewards)
