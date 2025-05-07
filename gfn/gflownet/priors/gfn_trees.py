@@ -381,7 +381,7 @@ def compare_trees(tree1, tree2, feature_names, classes_, bounds=None, comp_dist=
                     raise ValueError("概率不能为nan")
 
             # Compare the distribution of the class labels
-            epsilon = 1e-9
+            epsilon = 1e-4
             js_div = jensenshannon(probas1, probas2, base=2)
             if np.isnan(js_div): # If jensenshannon still returns NaN (e.g., if a probas was all zeros)
                 probas1 += epsilon

@@ -64,6 +64,7 @@ class GFlowNetAgent:
         logreward=True,
         sigma=None,
         phi=None,
+        loss_type='data',
         **kwargs,
     ):
         # Seed
@@ -234,7 +235,7 @@ class GFlowNetAgent:
         self.mean_probs_std = -1.0
         self.logprobs_std_nll_ratio = -1.0
         self.logreward = logreward
-
+        self.loss_type = loss_type
     def parameters(self):
         parameters = list(self.forward_policy.model.parameters())
         if self.backward_policy.is_model:
@@ -714,7 +715,7 @@ class GFlowNetAgent:
         # Get rewards from batch
         rewards = batch.get_terminating_rewards(sort_by="trajectory").to(self.device)
         
-        flag = 'data_prior'
+        flag = self.loss_type
 
         if flag == 'data_prior':
             effective_rewards = rewards * regular_term

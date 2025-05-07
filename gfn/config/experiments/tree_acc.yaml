@@ -16,7 +16,7 @@ SAVE: True
 # Environment
 env:
   _target_: gflownet.envs.tree_acc.Tree 
-  dataset: syn_data
+  dataset: iris
   split_seed: 1
   results_path: "eval_results" # Path for saving evaluation results
   data_path: ${user.data.root}/${env.dataset}/${env.dataset}_${env.split_seed}.csv # Add desired data path
@@ -35,6 +35,7 @@ env:
   buffer:
     min_replay_reward: -100000
     replay_capacity: 1
+  loss_type: data # data, prior, data_prior
 
 # GFlowNet hyperparameters
 gflownet:

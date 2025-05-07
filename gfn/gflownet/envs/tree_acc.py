@@ -201,6 +201,7 @@ class Tree(GFlowNetEnv):
         policy_format: str = "mlp",
         test_args: dict = {"top_k_trees": 0},
         mask_redundant_choices: bool = True,
+        loss_type: str = 'data',
         **kwargs,
     ):
         """
@@ -386,6 +387,8 @@ class Tree(GFlowNetEnv):
             continuous=continuous,
             **kwargs,
         )
+
+        self.loss_type = loss_type
 
     @staticmethod
     def _get_parent(k: int) -> Optional[int]:
