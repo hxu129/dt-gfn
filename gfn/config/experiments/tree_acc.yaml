@@ -35,7 +35,6 @@ env:
   buffer:
     min_replay_reward: -100000
     replay_capacity: 1
-  loss_type: prior # data, prior, data_prior
 
 # GFlowNet hyperparameters
 gflownet:
@@ -54,6 +53,8 @@ gflownet:
     lr_z_mult: 100
     n_train_steps: 300
     lr_decay_period: 1000
+  loss_type: data_prior # data, prior, data_prior
+  Lambda: 100
 
 # MLP policy
 policy:
@@ -84,8 +85,8 @@ logger:
   tags:
     - gflownet
   test:
-    period: 100 
-    n: 500
+    period: 2
+    n: 50
   checkpoints:
     period: 1000
 

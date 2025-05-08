@@ -65,6 +65,7 @@ class GFlowNetAgent:
         sigma=None,
         phi=None,
         loss_type='data',
+        Lambda=1,
         **kwargs,
     ):
         # Seed
@@ -236,6 +237,8 @@ class GFlowNetAgent:
         self.logprobs_std_nll_ratio = -1.0
         self.logreward = logreward
         self.loss_type = loss_type
+        self.Lambda = Lambda
+
     def parameters(self):
         parameters = list(self.forward_policy.model.parameters())
         if self.backward_policy.is_model:
@@ -666,7 +669,6 @@ class GFlowNetAgent:
         mean_similarity : float
             Mean structural similarity of the sampled trees in the batch.
         """
-        Lambda = 1
         samples = batch.get_terminating_states()
         if self.env.dirichlet:
             samples = torch.stack(samples, dim=0)
@@ -696,30 +698,28 @@ class GFlowNetAgent:
                 classes_=classes_,
                 bounds=bounds,
                 comp_dist=True,
-                dist_weight=0.5
+                dist_weight=0.2
             ))
         
         if sim_scores:
             similarity_tensor = torch.tensor(sim_scores, device=self.device, dtype=self.float)
             mean_similarity = similarity_tensor.mean()
-            regular_term = torch.exp(Lambda * similarity_tensor)
+            regular_term = torch.exp(self.Lambda * similarity_tensor)
         else:
             # Handle case where no sim_scores were computed (e.g. priors_json_path missing)
             mean_similarity = torch.tensor(0.0, device=self.device, dtype=self.float)
             regular_term = torch.ones(rewards.shape[0] if 'rewards' in locals() and isinstance(rewards, torch.Tensor) else 1, device=self.device, dtype=self.float)
 
 
-        # Get logprobs of forward and backward transitions
-        logprobs_f = self.compute_logprobs_trajectories(batch, backward=False)
-        logprobs_b = self.compute_logprobs_trajectories(batch, backward=True)
-        # Get rewards from batch
-        rewards = batch.get_terminating_rewards(sort_by="trajectory").to(self.device)
-        
         flag = self.loss_type
 
         if flag == 'data_prior':
+            # Get rewards from batch
+            rewards = batch.get_terminating_rewards(sort_by="trajectory").to(self.device)
             effective_rewards = rewards * regular_term
         elif flag == 'data':
+            # Get rewards from batch
+            rewards = batch.get_terminating_rewards(sort_by="trajectory").to(self.device)
             effective_rewards = rewards
         elif flag == 'prior':
             effective_rewards = regular_term
@@ -729,6 +729,10 @@ class GFlowNetAgent:
         else:
             log_rewards = effective_rewards
 
+        # Get logprobs of forward and backward transitions
+        logprobs_f = self.compute_logprobs_trajectories(batch, backward=False)
+        logprobs_b = self.compute_logprobs_trajectories(batch, backward=True)
+        
         # Trajectory balance loss
         loss = (self.logZ.sum() + logprobs_f - logprobs_b - log_rewards).pow(2).mean()
         return loss, loss, loss, mean_similarity
