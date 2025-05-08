@@ -392,12 +392,13 @@ def compare_trees(tree1, tree2, feature_names, classes_, bounds=None, comp_dist=
             if np.isnan(js_div):
                 js_div = 0
             dist_similarity = 1 - js_div
-        else:
+        # else:
+            # Do nothing with the distribution
             # step 1: compare the class label
-            class_label_1 = np.argmax(branch1["probas"])
-            class_label_2 = np.argmax(branch2["probas"])
-            if class_label_1 != class_label_2:
-                return not_match_label
+            # class_label_1 = np.argmax(branch1["probas"])
+            # class_label_2 = np.argmax(branch2["probas"])
+            # if class_label_1 != class_label_2:
+            #     return not_match_label
     
         overlap = 0
         overall_range_1 = 0

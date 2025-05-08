@@ -697,7 +697,7 @@ class GFlowNetAgent:
                 feature_names=feature_names,
                 classes_=classes_,
                 bounds=bounds,
-                comp_dist=True,
+                comp_dist=False,
                 dist_weight=0.2
             ))
         
