@@ -16,6 +16,7 @@ from typing import List, Optional, Tuple, Union
 
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 import torch
 import torch.nn as nn
 from gflownet.envs.base import GFlowNetEnv
@@ -66,6 +67,8 @@ class GFlowNetAgent:
         phi=None,
         loss_type='data',
         Lambda=1,
+        prior_json_path=None,
+        df_path=None,
         **kwargs,
     ):
         # Seed
@@ -238,6 +241,8 @@ class GFlowNetAgent:
         self.logreward = logreward
         self.loss_type = loss_type
         self.Lambda = Lambda
+        self.prior_json_path = prior_json_path
+        self.df_path = df_path
 
     def parameters(self):
         parameters = list(self.forward_policy.model.parameters())
@@ -676,7 +681,13 @@ class GFlowNetAgent:
         sim_scores = []
         # TODO: The priors_json path is hardcoded here. This should ideally be configured.
         # For now, using the path from the user's context.
-        priors_json_path = '/data/hzy/xh/dtfl/dt-gfn/dt-gfn/data/iris/iris_prior_trees_for_compare.json'
+        priors_json_path = self.prior_json_path
+        df_path = self.df_path
+        df = pd.read_csv(df_path)
+        classes_ = df['class'].unique().tolist()
+        df = df.drop(columns=['class', 'Split'])
+        feature_names = df.columns.tolist()
+        bounds = [(df[feature].min(), df[feature].max()) for feature in feature_names]
         for i, tree in enumerate(samples):
             # Assuming tree is a tensor, convert to list for calculate_average_similarity
             tree_numerical_list = tree.cpu().numpy().tolist() if isinstance(tree, torch.Tensor) else tree
@@ -688,9 +699,6 @@ class GFlowNetAgent:
             # ))
 
             # Data for iris dataset
-            feature_names = ['feature_0', 'feature_1', 'feature_2', 'feature_3']
-            classes_ = ['class_0', 'class_1', 'class_2']
-            bounds = [(4.3, 7.9), (2.0, 4.4), (1.0, 7.0), (0.1, 2.5)]
             sim_scores.append(compare_trees_average(
                 tree1=tree_numerical_list,
                 trees_file_path=priors_json_path,

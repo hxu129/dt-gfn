@@ -388,6 +388,7 @@ class Tree(GFlowNetEnv):
             **kwargs,
         )
 
+        # self.rng = np.random.default_rng(seed=kwargs.get('random_seed'))
         self.loss_type = loss_type
 
     @staticmethod
@@ -870,6 +871,13 @@ class Tree(GFlowNetEnv):
 
         if action != self.eos:
             action_type, action_value = action
+
+            # # If continuous, -1 is a placeholder for probabilities, sample a random one.
+            # if self.continuous and action_value == -1:
+            #     if action_type == ActionType.PICK_LEFT_CHILD_PROBABILITY or \
+            #        action_type == ActionType.PICK_RIGHT_CHILD_PROBABILITY:
+            #         action_value = self.rng.random()  # Sample a float in [0.0, 1.0)
+            #         action = (action_type, action_value) # Update action tuple
 
             if action_type == ActionType.PICK_LEAF:
                 self._pick_leaf(action_value)
