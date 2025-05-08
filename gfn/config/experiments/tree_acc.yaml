@@ -20,8 +20,8 @@ env:
   split_seed: 1
   results_path: "eval_results" # Path for saving evaluation results
   data_path: ${user.data.root}/${env.dataset}/${env.dataset}_${env.split_seed}.csv # Add desired data path
-  max_depth: 4
-  continuous: True
+  max_depth: 3
+  continuous: False
   dirichlet: True
   mask_redundant_choices: True
   reward_func: dummy
@@ -87,8 +87,8 @@ logger:
   tags:
     - gflownet
   test:
-    period: 2
-    n: 50
+    period: 3
+    n: 25
   checkpoints:
     period: 1000
 
