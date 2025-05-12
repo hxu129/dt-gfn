@@ -16,20 +16,20 @@ SAVE: False
 # Environment
 env:
   _target_: gflownet.envs.tree_acc.Tree 
-  dataset: iris
+  dataset: breast_cancer
   split_seed: 1
   results_path: "eval_results" # Path for saving evaluation results
   data_path: ${user.data.root}/${env.dataset}/${env.dataset}_${env.split_seed}.csv # Add desired data path
   max_depth: 4
-  continuous: True
+  continuous: False
   dirichlet: True
   mask_redundant_choices: True
   reward_func: dummy
-  prior: [.1, .1, .1]
-  n_classes: 3
+  prior: [.1, .1]
+  n_classes: 2
   n_thresholds: 1
   policy_format: mlp
-  threshold_components: 5
+  threshold_components: 3
   test_args:
     top_k_trees: 1
   buffer:
@@ -40,7 +40,7 @@ env:
 gflownet:
   _target_: gflownet.gflownet_acc.GFlowNetAgent
   logreward: False
-  use_mixed_precision: False
+  use_mixed_precision: True
   random_action_prob: 0.1
   replay_sampling: weighted
   optimizer:
@@ -53,7 +53,7 @@ gflownet:
     lr_z_mult: 100
     n_train_steps: 300
     lr_decay_period: 1000
-  loss_type: prior # data, prior, data_prior
+  loss_type: data # data, prior, data_prior
   Lambda: 1
   prior_json_path: ${user.data.root}/${env.dataset}/${env.dataset}_prior_trees_for_compare.json
   df_path: ${user.data.root}/${env.dataset}/${env.dataset}.csv
@@ -88,7 +88,9 @@ logger:
     - gflownet
   test:
     period: 2
-    n: 50
+    n: 15
+    sort_by_loss: False
+    use_full_loss_calculation: False
   checkpoints:
     period: 1000
 

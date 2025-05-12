@@ -2244,6 +2244,8 @@ class Tree(GFlowNetEnv):
         samples: Union[
             TensorType["n_trajectories", "..."], npt.NDArray[np.float32], List
         ],
+        sort_by_loss: bool = False,
+        loss_values: Optional[torch.Tensor] = None,
     ) -> dict:
         """
         Computes a dictionary of metrics, as described in Tree._compute_scores, for
@@ -2254,6 +2256,14 @@ class Tree(GFlowNetEnv):
         ----
         samples : Tensor
             Collection of sampled states representing the ensemble.
+            
+        sort_by_loss : bool
+            If True, sort trees by trajectory balance loss values for top_k and top_1 selection.
+            If False (default), sort trees by accuracy for top_k and top_1 selection.
+            
+        loss_values : torch.Tensor, optional
+            Tensor containing loss values for each tree, used for sorting when sort_by_loss=True.
+            Should have the same length as samples.
 
         Returns
         -------
@@ -2281,17 +2291,26 @@ class Tree(GFlowNetEnv):
             if not hasattr(self, "test_iteration"):
                 self.test_iteration = 0
 
-            # Select top-k trees.
-            accuracies = np.array(
-                [accuracy_score(self.y_train, y_pred) for y_pred in train_predictions]
-            )
-            order = np.argsort(accuracies)[::-1]
+            # Select top-k trees based on sort criteria
+            if sort_by_loss and loss_values is not None:
+                # For loss values, smaller is better
+                loss_np = loss_values.detach().cpu().numpy()
+                order = np.argsort(loss_np)
+                plot_scores = -loss_np  # Negate for plotting (so smaller loss = better score)
+            else:
+                # Sort by accuracy (default behavior)
+                accuracies = np.array(
+                    [accuracy_score(self.y_train, y_pred) for y_pred in train_predictions]
+                )
+                order = np.argsort(accuracies)[::-1]  # Descending for accuracy
+                plot_scores = accuracies
+            
             top_k_indices = order[: self.test_args["top_k_trees"]]
 
             # Plot trees.
             Tree._plot_trees(
                 [train_samples[i][:, : -self.n_classes] for i in top_k_indices],
-                accuracies[top_k_indices],
+                plot_scores[top_k_indices],
                 self.test_iteration,
             )
 
@@ -2309,7 +2328,10 @@ class Tree(GFlowNetEnv):
             )
             for k, v in top_1_scores.items():
                 result[f"train_top_1_{k}"] = v
-
+                
+            # Record sorting method in results
+            result["sort_method"] = "loss" if sort_by_loss else "accuracy"
+            
             self.test_iteration += 1
 
         if self.X_test is not None:

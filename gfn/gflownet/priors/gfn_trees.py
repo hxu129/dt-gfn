@@ -505,7 +505,7 @@ def compare_trees(tree1, tree2, feature_names, classes_, bounds=None, comp_dist=
     total_similarity = 0
     for i, j in zip(row_ind, col_ind):
         total_similarity += similarity_matrix[i, j]
-    average_similarity = 2 * (total_similarity - penalty) / (len(branches1) + len(branches2))
+    average_similarity = 2 * (total_similarity - 0 * penalty) / (len(branches1) + len(branches2))
 
     print(f"平均相似度是{average_similarity}, 惩罚是{penalty}")
     print(f"branch1 规则数是{len(branches1)}, branch2 规则数是{len(branches2)}")

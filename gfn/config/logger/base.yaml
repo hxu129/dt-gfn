@@ -14,6 +14,8 @@ test:
   first_it: True
   period: 1
   n: 100
+  sort_by_loss: False
+  use_full_loss_calculation: False
   kde:
     bandwidth: 0.1
     kernel: gaussian
