@@ -11,7 +11,7 @@ defaults:
 device: gpu
 float_precision: 32
 n_samples: 1
-SAVE: False
+SAVE: True
 
 # Environment
 env:
@@ -20,7 +20,7 @@ env:
   split_seed: 1
   results_path: "eval_results" # Path for saving evaluation results
   data_path: ${user.data.root}/${env.dataset}/${env.dataset}_${env.split_seed}.csv # Add desired data path
-  max_depth: 4
+  max_depth: 5
   continuous: False
   dirichlet: True
   mask_redundant_choices: True
@@ -53,10 +53,10 @@ gflownet:
     lr_z_mult: 100
     n_train_steps: 300
     lr_decay_period: 1000
-  loss_type: data_prior # data, prior, data_prior
+  loss_type: data # data, prior, data_prior
   Lambda: 1
   prior_json_path: ${user.data.root}/${env.dataset}/${env.dataset}_prior_trees_for_compare.json
-  df_path: ${user.data.root}/${env.dataset}/${env.dataset}.csv
+  df_path: ${user.data.root}/${env.dataset}/${env.dataset}_${env.split_seed}.csv
 
 # MLP policy
 policy:
