@@ -2360,3 +2360,41 @@ class Tree(GFlowNetEnv):
                     result[f"test_top_1_{k}"] = v
 
         return result
+
+    def calculate_tree_loss(self, state: torch.Tensor) -> float:
+        """
+        Calculate the loss for a single tree.
+        
+        This method computes a loss metric for a tree, which can be used for sorting
+        or filtering trees. The loss is calculated as the negative accuracy of the tree
+        on the training data, or using a more complex metric if specified.
+        
+        Args
+        ----
+        state : torch.Tensor
+            The state tensor representing a tree
+            
+        Returns
+        -------
+        float
+            The loss value for the tree (lower is better)
+        """
+        # Convert single state to batch format if needed
+        if state.dim() == 2:
+            state = state.unsqueeze(0)
+            
+        # Get predictions on training data
+        predictions = Tree._predict_samples(
+            state, self.X_train, dirichlet=self.dirichlet
+        )
+        
+        # Calculate negative accuracy as the loss (lower is better)
+        accuracy = accuracy_score(self.y_train, predictions[0])
+        loss = -accuracy  # Negative because we want to minimize loss
+        
+        # Could be extended to use other metrics:
+        # - Tree complexity penalty
+        # - Balanced accuracy
+        # - Custom loss function
+        
+        return loss

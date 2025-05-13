@@ -37,6 +37,7 @@ from torch.distributions import Bernoulli
 from torch.multiprocessing import Pool
 from tqdm import tqdm
 import multiprocessing as mp
+from sklearn.metrics import accuracy_score
 
 
 class GFlowNetAgent:
@@ -1398,87 +1399,79 @@ class GFlowNetAgent:
                 self.mean_logprobs_std,
                 self.mean_probs_std,
                 self.logprobs_std_nll_ratio,
-                None,
-                None,
+                (None,),
+                {},
             )
-        fig = None
         with open(self.buffer.test_pkl, "rb") as f:
             dict_tt = pickle.load(f)
-            if not isinstance(dict_tt, dict):
-                x_tt = dict_tt
-                dict_tt = {}
-                dict_tt["x"] = x_tt
-            else:
-                # 向后兼容：同时支持 "x" 和 "x_tt" 两个键名
-                if "x_tt" in dict_tt:
-                    x_tt = dict_tt["x_tt"]
-                elif "x" in dict_tt:
-                    x_tt = dict_tt["x"]
-                else:
-                    # 如果两个键都不存在，创建一个空列表避免后续错误
-                    x_tt = []
-                    print("警告: 测试数据中既没有 'x' 也没有 'x_tt' 键")
+            x_tt = dict_tt["x"]
 
-        # Get posterior mean & std of corr(logp, rewards)
-        corr_prob_traj_rewards = 0.0 if self.corr_prob_traj_rewards is None else self.corr_prob_traj_rewards
-        var_logrewards_logp = 100.0 if self.var_logrewards_logp is None else self.var_logrewards_logp
-        nll_tt = -100.0 if self.nll_tt is None else self.nll_tt
-        mean_logprobs_std = 0.0 if self.mean_logprobs_std is None else self.mean_logprobs_std
-        mean_probs_std = 0.0 if self.mean_probs_std is None else self.mean_probs_std
-        logprobs_std_nll_ratio = 0.0 if self.logprobs_std_nll_ratio is None else self.logprobs_std_nll_ratio
-
-        # Sample trajectories
-        batch, times = self.sample_batch(
-            n_forward=self.logger.test.n, train=False, progress=False
+        # Compute correlation between the rewards of the test data and the log
+        # likelihood of the data according the the GFlowNet policy; and NLL.
+        # TODO: organise code for better efficiency and readability
+        logprobs_x_tt, logprobs_std, probs_std = self.estimate_logprobs_data(
+            x_tt,
+            n_trajectories=self.logger.test.n_trajs_logprobs,
+            max_data_size=self.logger.test.max_data_logprobs,
+            batch_size=self.logger.test.logprobs_batch_size,
+            bs_num_samples=self.logger.test.logprobs_bootstrap_size,
         )
+        mean_logprobs_std = logprobs_std.mean().item()
+        mean_probs_std = probs_std.mean().item()
+        rewards_x_tt = self.env.reward_batch(x_tt)
+        fig = plt.figure()
+        plt.scatter(rewards_x_tt, logprobs_x_tt.cpu().numpy())
+        np.save("corr_plot.npz", logprobs_x_tt.cpu().numpy(), rewards_x_tt)
+        plt.savefig("corr_plot.pdf")
+        if not self.logreward:
+            rewards_x_tt = np.exp(rewards_x_tt)
+        corr_prob_traj_rewards = np.corrcoef(
+            np.exp(logprobs_x_tt.cpu().numpy()), rewards_x_tt
+        )[0, 1]
+        var_logrewards_logp = (
+            torch.var(
+                torch.log(
+                    tfloat(rewards_x_tt, float_type=self.float, device=self.device)
+                )
+                - logprobs_x_tt
+            ).item()
+            if rewards_x_tt.shape[0] > 1
+            else torch.tensor(0.0)
+        )
+        nll_tt = -logprobs_x_tt.mean().item()
+        logprobs_std_nll_ratio = torch.mean(-logprobs_std / logprobs_x_tt).item()
+
+        batch, _ = self.sample_batch(n_forward=self.logger.test.n, train=False)
+        assert batch.is_valid()
         x_sampled = batch.get_terminating_states()
-        
-        # 获取排序设置
-        use_loss_sorting = getattr(self.logger.test, "sort_by_loss", False)
-        use_full_loss_calculation = getattr(self.logger.test, "use_full_loss_calculation", False)
-        
-        # 只有在需要按损失排序时才计算损失值
-        if use_loss_sorting:
-            # 计算每个树的损失值
-            # 如果 use_full_loss_calculation=True，则使用完整的轨迹平衡损失计算
-            # 否则使用简化的损失计算
-            if use_full_loss_calculation:
-                print("使用完整的轨迹平衡损失计算进行排序...")
-                tree_losses = self.calculate_tree_losses(x_sampled, batch=batch)
+
+        if self.buffer.test_type is not None and self.buffer.test_type == "all":
+            if "density_true" in dict_tt:
+                density_true = dict_tt["density_true"]
             else:
-                print("使用简化的损失计算进行排序...")
-                tree_losses = self.calculate_tree_losses(x_sampled, batch=None)
-                
-            # 调用 env.test 方法，传递损失值用于排序
-            env_metrics = self.env.test(
-                x_sampled, 
-                sort_by_loss=True, 
-                loss_values=tree_losses
+                rewards = self.env.reward_batch(x_tt)
+                z_true = rewards.sum()
+                density_true = rewards / z_true
+                with open(self.buffer.test_pkl, "wb") as f:
+                    dict_tt["density_true"] = density_true
+                    pickle.dump(dict_tt, f)
+            hist = defaultdict(int)
+            for x in x_sampled:
+                hist[self.env.state2readable(x)] += 1
+            z_pred = sum([hist[tuple(x)] for x in x_tt]) + 1e-9
+            density_pred = np.array([hist[tuple(x)] / z_pred for x in x_tt])
+            log_density_true = np.log(density_true + 1e-8)
+            log_density_pred = np.log(density_pred + 1e-8)
+            env_metrics = self.env.test(self.env.get_all_terminating_states())
+            logprobs_x_tt, logprobs_std, probs_std = self.estimate_logprobs_data(
+                self.env.get_all_terminating_states(),
+                n_trajectories=self.logger.test.n_trajs_logprobs,
+                max_data_size=self.logger.test.max_data_logprobs,
+                batch_size=self.logger.test.logprobs_batch_size,
+                bs_num_samples=self.logger.test.logprobs_bootstrap_size,
             )
-        else:
-            # 按默认方式排序（准确度）
-            env_metrics = self.env.test(x_sampled)
-
-        if not hasattr(self.env, "test"):
-            return (
-                self.l1,
-                self.kl,
-                self.jsd,
-                corr_prob_traj_rewards,
-                var_logrewards_logp,
-                nll_tt,
-                mean_logprobs_std,
-                mean_probs_std,
-                logprobs_std_nll_ratio,
-                None,
-                None,
-            )
-
-        if not hasattr(self.env, "states2proxy"):
-            # 记录排序方式
-            if use_loss_sorting:
-                env_metrics['sort_method'] = "loss"
-                
+            fig = plt.figure()
+            plt.scatter(rewards_x_tt, logprobs_x_tt.cpu().numpy())
             return (
                 self.l1,
                 self.kl,
@@ -1492,20 +1485,222 @@ class GFlowNetAgent:
                 (fig,),
                 env_metrics,
             )
+        elif self.continuous and hasattr(self.env, "fit_kde"):
+            # TODO make it work with conditional env
+            x_sampled = torch2np(self.env.states2proxy(x_sampled))
+            x_tt = torch2np(self.env.states2proxy(x_tt))
+            kde_pred = self.env.fit_kde(
+                x_sampled,
+                kernel=self.logger.test.kde.kernel,
+                bandwidth=self.logger.test.kde.bandwidth,
+            )
+            if "log_density_true" in dict_tt and "kde_true" in dict_tt:
+                log_density_true = dict_tt["log_density_true"]
+                kde_true = dict_tt["kde_true"]
+            else:
+                # Sample from reward via rejection sampling
+                x_from_reward = self.env.sample_from_reward(
+                    n_samples=self.logger.test.n
+                )
+                x_from_reward = torch2np(self.env.states2proxy(x_from_reward))
+                # Fit KDE with samples from reward
+                kde_true = self.env.fit_kde(
+                    x_from_reward,
+                    kernel=self.logger.test.kde.kernel,
+                    bandwidth=self.logger.test.kde.bandwidth,
+                )
+                # Estimate true log density using test samples
+                # TODO: this may be specific-ish for the torus or not
+                scores_true = kde_true.score_samples(x_tt)
+                log_density_true = scores_true - logsumexp(scores_true, axis=0)
+                # Add log_density_true and kde_true to pickled test dict
+                with open(self.buffer.test_pkl, "wb") as f:
+                    dict_tt["log_density_true"] = log_density_true
+                    dict_tt["kde_true"] = kde_true
+                    pickle.dump(dict_tt, f)
+            # Estimate pred log density using test samples
+            # TODO: this may be specific-ish for the torus or not
+            scores_pred = kde_pred.score_samples(x_tt)
+            log_density_pred = scores_pred - logsumexp(scores_pred, axis=0)
+            density_true = np.exp(log_density_true)
+            density_pred = np.exp(log_density_pred)
+        else:
+            # 首先计算树的相似度（始终计算）
+            tree_similarities = None
+            if hasattr(self, 'prior_json_path') and self.prior_json_path and hasattr(self, 'df_path'):
+                # 准备相似度计算的参数
+                df_path = self.df_path
+                df = pd.read_csv(df_path)
+                classes_ = df['class'].unique().tolist()
+                df = df.drop(columns=['class', 'Split'])
+                feature_names = df.columns.tolist()
+                bounds = [(df[feature].min(), df[feature].max()) for feature in feature_names]
+                
+                # 计算每棵树与基准树的相似度
+                sim_scores = self.parallel_calculate_similarity(
+                    x_sampled, self.prior_json_path, feature_names, classes_, bounds
+                )
+                if sim_scores:
+                    tree_similarities = sim_scores
+                    # 添加到环境指标中
+                    env_metrics = {"tree_similarities": sim_scores, "mean_similarity": np.mean(sim_scores)}
+                    # 将相似度转换为张量，便于后续使用
+                    similarity_tensor = torch.tensor(sim_scores, device=self.device, dtype=self.float)
+                else:
+                    env_metrics = {}
+            else:
+                env_metrics = {}
+                
+            # 判断是否需要按loss排序，以及是否需要计算loss
+            do_sort_by_loss = hasattr(self.logger.test, "sort_by_loss") and self.logger.test.sort_by_loss
+            do_calculate_loss = hasattr(self.logger.test, "use_full_loss_calculation") and self.logger.test.use_full_loss_calculation
             
-        # 默认返回值，确保所有路径都有返回值
+            tree_losses = None
+            # 如果需要按loss排序或需要计算loss，计算每棵树的loss
+            # if do_sort_by_loss or do_calculate_loss:
+            #     tree_losses = []
+            #     for x in x_sampled:
+            #         # 获取每棵树的loss
+            #         loss = self.env.calculate_tree_loss(x)
+            #         tree_losses.append(loss)
+                    
+            #     # 添加loss指标
+            #     env_metrics["tree_losses"] = tree_losses
+            #     env_metrics["mean_tree_loss"] = np.mean(tree_losses)
+            #     env_metrics["min_tree_loss"] = np.min(tree_losses)
+            #     env_metrics["max_tree_loss"] = np.max(tree_losses)
+                
+            #     # 如果需要按loss排序，则排序
+            #     if do_sort_by_loss:
+            #         # 创建(树, loss)对的列表
+            #         tree_loss_pairs = list(zip(x_sampled, tree_losses))
+            #         # 按loss升序排序(值越小越好)
+            #         tree_loss_pairs.sort(key=lambda pair: pair[1])
+            #         # 解包排序后的列表
+            #         sorted_x_sampled = [pair[0] for pair in tree_loss_pairs]
+            #         sorted_tree_losses = [pair[1] for pair in tree_loss_pairs]
+                    
+            #         # 更新x_sampled和tree_losses为排序后的结果
+            #         x_sampled = sorted_x_sampled
+            #         tree_losses = sorted_tree_losses
+                    
+            #         # 如果有相似度数据，也需要按照同样的顺序排序
+            #         if tree_similarities is not None:
+            #             # 创建(相似度, loss)对的列表并按loss排序
+            #             sim_loss_pairs = list(zip(tree_similarities, tree_losses))
+            #             sim_loss_pairs.sort(key=lambda pair: pair[1])
+            #             # 更新排序后的相似度
+            #             sorted_tree_similarities = [pair[0] for pair in sim_loss_pairs]
+            #             tree_similarities = sorted_tree_similarities
+            #             env_metrics["tree_similarities"] = tree_similarities
+            
+            # 调用环境的test方法
+            if hasattr(self.env, "test") and callable(self.env.test):
+                # 检查env.test方法是否接受sort_by_loss和loss_values参数
+                import inspect
+                env_test_params = inspect.signature(self.env.test).parameters
+                
+                if ("sort_by_loss" in env_test_params and 
+                    "loss_values" in env_test_params and 
+                    do_sort_by_loss and 
+                    tree_losses is not None):
+                    # 转换tree_losses为张量用于env.test方法
+                    loss_values_tensor = torch.tensor(tree_losses, device=self.device)
+                    env_test_metrics = self.env.test(
+                        x_sampled, 
+                        sort_by_loss=do_sort_by_loss,
+                        loss_values=loss_values_tensor
+                    )
+                else:
+                    # 常规调用，不带sort_by_loss/loss_values
+                    env_test_metrics = self.env.test(x_sampled)
+                
+                # 合并来自env.test的指标与我们自己计算的指标
+                env_metrics.update(env_test_metrics)
+            
+            # 在这里可以添加对树相似度和loss关系的分析
+            if tree_similarities is not None and tree_losses is not None:
+                corr = np.corrcoef(tree_similarities, tree_losses)[0, 1]
+                env_metrics["similarity_loss_correlation"] = corr
+            
+            # # 计算树相似度与准确率的相关性
+            # if tree_similarities is not None:
+            #     # 计算每棵树的准确率（如果tree_losses已存在，则直接使用负loss）
+            #     if tree_losses is not None:
+            #         # 由于loss = -accuracy，我们可以直接使用-loss作为accuracy
+            #         tree_accuracies = [-loss for loss in tree_losses]
+            #     else:
+            #         # 如果没有计算过loss，则计算每棵树的准确率
+            #         tree_accuracies = []
+            #         for i, x in enumerate(x_sampled):
+            #             # 使用单个树进行预测并计算准确率
+            #             single_tree_pred = Tree._predict_samples(
+            #                 x.unsqueeze(0) if isinstance(x, torch.Tensor) else np.array([x]), 
+            #                 self.env.X_train, 
+            #                 dirichlet=self.env.dirichlet
+            #             )
+            #             accuracy = accuracy_score(self.env.y_train, single_tree_pred[0])
+            #             tree_accuracies.append(accuracy)
+                
+            #     # 计算相似度与准确率的相关性
+            #     sim_acc_corr = np.corrcoef(tree_similarities, tree_accuracies)[0, 1]
+            #     env_metrics["similarity_accuracy_correlation"] = sim_acc_corr
+                
+            #     # 将树准确率添加到指标中
+            #     env_metrics["tree_accuracies"] = tree_accuracies
+            #     env_metrics["mean_accuracy"] = np.mean(tree_accuracies)
+            
+            # 计算loss与准确率的相关性（如果两者都存在）
+            if tree_losses is not None and "tree_accuracies" in env_metrics:
+                loss_acc_corr = np.corrcoef(tree_losses, env_metrics["tree_accuracies"])[0, 1]
+                env_metrics["loss_accuracy_correlation"] = loss_acc_corr
+            
+            return (
+                self.l1,
+                self.kl,
+                self.jsd,
+                corr_prob_traj_rewards,
+                var_logrewards_logp,
+                nll_tt,
+                mean_logprobs_std,
+                mean_probs_std,
+                logprobs_std_nll_ratio,
+                (fig,),
+                env_metrics,
+            )
+        # L1 error
+        l1 = np.abs(density_pred - density_true).mean()
+        # KL divergence
+        kl = (density_true * (log_density_true - log_density_pred)).mean()
+        # Jensen-Shannon divergence
+        log_mean_dens = np.logaddexp(log_density_true, log_density_pred) + np.log(0.5)
+        jsd = 0.5 * np.sum(density_true * (log_density_true - log_mean_dens))
+        jsd += 0.5 * np.sum(density_pred * (log_density_pred - log_mean_dens))
+
+        # Plots
+
+        if hasattr(self.env, "plot_reward_samples"):
+            fig_reward_samples = self.env.plot_reward_samples(x_sampled, **plot_kwargs)
+        else:
+            fig_reward_samples = None
+        if hasattr(self.env, "plot_kde"):
+            fig_kde_pred = self.env.plot_kde(kde_pred, **plot_kwargs)
+            fig_kde_true = self.env.plot_kde(kde_true, **plot_kwargs)
+        else:
+            fig_kde_pred = None
+            fig_kde_true = None
         return (
-            self.l1,
-            self.kl,
-            self.jsd,
+            l1,
+            kl,
+            jsd,
             corr_prob_traj_rewards,
             var_logrewards_logp,
             nll_tt,
             mean_logprobs_std,
             mean_probs_std,
             logprobs_std_nll_ratio,
-            (fig,),
-            env_metrics,
+            [fig, fig_reward_samples, fig_kde_pred, fig_kde_true],
+            {},
         )
 
     @torch.no_grad()
