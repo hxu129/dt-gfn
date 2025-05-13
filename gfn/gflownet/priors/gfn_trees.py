@@ -3,6 +3,9 @@ from scipy.optimize import linear_sum_assignment
 from scipy.spatial.distance import jensenshannon
 import pandas as pd
 import json
+import multiprocessing as mp
+from functools import partial
+import os
 
 class SimpleBranch:
     def __init__(self, feature_names, classes_, label_probas=None, number_of_samples=0):
@@ -512,9 +515,44 @@ def compare_trees(tree1, tree2, feature_names, classes_, bounds=None, comp_dist=
     
     return average_similarity
 
-def compare_trees_average(tree1, trees_file_path, feature_names, classes_, bounds=None, comp_dist=False, dist_weight=0.5):
+def _process_single_tree_comparison(tree_from_file, tree1, feature_names, classes_, bounds, comp_dist, dist_weight):
+    """
+    处理单个树比较的辅助函数，便于并行化。
+    
+    Args:
+        tree_from_file: 从文件中读取的单个树
+        tree1: 基准树
+        feature_names, classes_, bounds, comp_dist, dist_weight: 传递给 compare_trees 的参数
+        
+    Returns:
+        float 或 None: 树比较的相似度分数，如果无效则返回 None
+    """
+    # 预处理树数据，处理 None 值
+    node_len = 0
+    for i, node in enumerate(tree_from_file):
+        if isinstance(node, list):
+            node_len = len(node)
+            for j, element in enumerate(node):
+                if element is None:
+                    tree_from_file[i][j] = np.nan
+        if node is None:
+            tree_from_file[i] = np.full(node_len, np.nan)
+    
+    # 计算相似度
+    similarity = compare_trees(
+        tree1, tree_from_file, feature_names=feature_names, classes_=classes_,
+        bounds=bounds, comp_dist=comp_dist, dist_weight=dist_weight
+    )
+    
+    # 验证相似度值有效性
+    if isinstance(similarity, (float, int)) and not np.isnan(similarity):
+        return float(similarity)
+    return None
+
+def compare_trees_average(tree1, trees_file_path, feature_names, classes_, bounds=None, comp_dist=False, dist_weight=0.5, n_workers=None):
     """
     Compares a given tree (tree1) with a list of trees from a file and returns the average similarity.
+    Utilizes multiprocessing for parallel computation.
 
     Args:
         tree1: The first numerical tree (list of lists or similar structure).
@@ -524,6 +562,7 @@ def compare_trees_average(tree1, trees_file_path, feature_names, classes_, bound
         bounds: Optional list of (min, max) tuples for feature bounds.
         comp_dist: Boolean, whether to compare label distribution.
         dist_weight: Float, weight for distribution difference in similarity.
+        n_workers: Number of worker processes to use. If None, uses CPU count.
 
     Returns:
         float: The average similarity score. Returns 0.0 if the file is empty, cannot be read,
@@ -549,28 +588,49 @@ def compare_trees_average(tree1, trees_file_path, feature_names, classes_, bound
     if not list_of_trees: # Handles empty list
         print(f"Warning: No trees found in {trees_file_path}. Returning 0.0 average similarity.")
         return 0.0
-
+    
+    # 确定使用的进程数
+    if n_workers is None:
+        n_workers = max(1, os.cpu_count() - 1)  # 至少使用1个进程，默认使用CPU核心数-1
+    
+    # 限制进程数，避免创建过多的进程
+    n_workers = min(n_workers, len(list_of_trees), 32)  # 最多32个进程
+    
+    print(f"使用 {n_workers} 个进程并行计算树相似度...")
+    
+    # 创建部分函数，固定除树以外的所有参数
+    process_tree = partial(
+        _process_single_tree_comparison,
+        tree1=tree1,
+        feature_names=feature_names,
+        classes_=classes_,
+        bounds=bounds,
+        comp_dist=comp_dist,
+        dist_weight=dist_weight
+    )
+    
+    # 使用进程池并行处理
     similarity_scores = []
-    for tree_from_file in list_of_trees:
-        node_len = 0
-        for i, node in enumerate(tree_from_file):
-            if isinstance(node, list):
-                node_len = len(node)
-                for j, element in enumerate(node):
-                    if element is None:
-                        tree_from_file[i][j] = np.nan
-            if node is None:
-                tree_from_file[i] = np.full(node_len, np.nan)
-        similarity = compare_trees(
-            tree1, tree_from_file, feature_names=feature_names, classes_=classes_,
-            bounds=bounds, comp_dist=comp_dist, dist_weight=dist_weight
-        )
-        # Ensure that compare_trees returns a float, or handle potential NaNs/non-floats
-        if isinstance(similarity, (float, int)) and not np.isnan(similarity):
-            similarity_scores.append(float(similarity))
-        else:
-            print(f"Warning: compare_trees returned an invalid similarity value ({similarity}) for a tree in {trees_file_path}. Skipping this tree.")
-
+    if n_workers > 1:
+        try:
+            with mp.Pool(processes=n_workers) as pool:
+                # 使用pool.map将处理函数应用到树列表
+                results = pool.map(process_tree, list_of_trees)
+                # 过滤掉None值，只保留有效的相似度分数
+                similarity_scores = [score for score in results if score is not None]
+        except Exception as e:
+            print(f"并行处理时发生错误: {e}，回退到串行处理")
+            # 如果并行处理失败，回退到串行处理
+            for tree_from_file in list_of_trees:
+                score = process_tree(tree_from_file)
+                if score is not None:
+                    similarity_scores.append(score)
+    else:
+        # 直接串行处理
+        for tree_from_file in list_of_trees:
+            score = process_tree(tree_from_file)
+            if score is not None:
+                similarity_scores.append(score)
 
     if not similarity_scores: # If all trees in file led to invalid similarities
         print(f"Warning: No valid similarity scores could be computed from trees in {trees_file_path}. Returning 0.0 average similarity.")
