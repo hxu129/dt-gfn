@@ -16,7 +16,7 @@ SAVE: False
 # Environment
 env:
   _target_: gflownet.envs.tree_acc.Tree 
-  dataset: iris
+  dataset: breast_cancer
   split_seed: 1
   results_path: "eval_results" # Path for saving evaluation results
   data_path: ${user.data.root}/${env.dataset}/${env.dataset}_${env.split_seed}.csv # Add desired data path
@@ -25,8 +25,8 @@ env:
   dirichlet: True
   mask_redundant_choices: True
   reward_func: dummy
-  prior: [.1, .1, .1]
-  n_classes: 3
+  prior: [.1, .1]
+  n_classes: 2
   n_thresholds: 99
   policy_format: mlp
   threshold_components: 3

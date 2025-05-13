@@ -36,6 +36,7 @@ from torch.cuda.amp import GradScaler, autocast
 from torch.distributions import Bernoulli
 from torch.multiprocessing import Pool
 from tqdm import tqdm
+import multiprocessing as mp
 
 
 class GFlowNetAgent:
@@ -594,6 +595,52 @@ class GFlowNetAgent:
         ).index_add_(0, traj_indices, logprobs_states)
         return logprobs
 
+    def parallel_calculate_similarity(self, trees, priors_json_path, feature_names, classes_, bounds):
+        """并行计算一组树与基准树的相似度
+
+        Args:
+            trees: 要计算相似度的树列表
+            priors_json_path: 包含基准树的JSON文件路径
+            feature_names: 特征名称列表
+            classes_: 类别列表
+            bounds: 特征边界列表
+
+        Returns:
+            list: 相似度得分列表
+        """
+        # 准备需要处理的树数据
+        tree_data = []
+        for i, tree in enumerate(trees):
+            # 如果是tensor，转换为numpy数组再转为列表
+            tree_numerical_list = tree.cpu().numpy().tolist() if isinstance(tree, torch.Tensor) else tree
+            tree_data.append((
+                tree_numerical_list,
+                priors_json_path,
+                feature_names,
+                classes_,
+                bounds,
+                False,  # comp_dist
+                0.2,    # dist_weight
+            ))
+        
+        # 获取CPU核心数，保留一个核心给主线程
+        n_workers = max(1, os.cpu_count() - 1)
+        # 限制最大进程数
+        n_workers = min(n_workers, len(trees), 32)
+        
+        print(f"使用 {n_workers} 个进程并行计算批次中 {len(trees)} 棵树的相似度...")
+        
+        # 创建进程池并执行计算
+        if n_workers > 1 and len(trees) > 1:
+            with mp.Pool(processes=n_workers) as pool:
+                # 使用starmap将参数展开传递给compare_trees_average函数
+                sim_scores = pool.starmap(compare_trees_average, tree_data)
+        else:
+            # 如果只有一个进程或一棵树，直接串行计算
+            sim_scores = [compare_trees_average(*args) for args in tree_data]
+            
+        return sim_scores
+
     def flowmatch_loss(self, it, batch):
         """
         Computes the loss of a batch
@@ -674,13 +721,13 @@ class GFlowNetAgent:
         mean_similarity : float
             Mean structural similarity of the sampled trees in the batch.
         """
+        # 准备数据
         samples = batch.get_terminating_states()
         if self.env.dirichlet:
             samples = torch.stack(samples, dim=0)
             samples = self.env._sample_proba_dirichlet(samples, test=False)
-        sim_scores = []
-        # TODO: The priors_json path is hardcoded here. This should ideally be configured.
-        # For now, using the path from the user's context.
+        
+        # 准备相似度计算的参数
         priors_json_path = self.prior_json_path
         df_path = self.df_path
         df = pd.read_csv(df_path)
@@ -688,30 +735,21 @@ class GFlowNetAgent:
         df = df.drop(columns=['class', 'Split'])
         feature_names = df.columns.tolist()
         bounds = [(df[feature].min(), df[feature].max()) for feature in feature_names]
-        for i, tree in enumerate(samples):
-            # Assuming tree is a tensor, convert to list for calculate_average_similarity
-            tree_numerical_list = tree.cpu().numpy().tolist() if isinstance(tree, torch.Tensor) else tree
-
-            sim_scores.append(compare_trees_average(
-                tree1=tree_numerical_list,
-                trees_file_path=priors_json_path,
-                feature_names=feature_names,
-                classes_=classes_,
-                bounds=bounds,
-                comp_dist=False,
-                dist_weight=0.2
-            ))
         
+        # 并行计算相似度
+        sim_scores = self.parallel_calculate_similarity(
+            samples, priors_json_path, feature_names, classes_, bounds
+        )
+        
+        # 处理相似度结果
         if sim_scores:
             similarity_tensor = torch.tensor(sim_scores, device=self.device, dtype=self.float)
             mean_similarity = similarity_tensor.mean()
-            # regular_term = torch.exp(self.Lambda * similarity_tensor)
             regular_term = nn.functional.sigmoid(10 * similarity_tensor)
         else:
-            # Handle case where no sim_scores were computed (e.g. priors_json_path missing)
+            # 处理无相似度分数的情况
             mean_similarity = torch.tensor(0.0, device=self.device, dtype=self.float)
             regular_term = torch.ones(rewards.shape[0] if 'rewards' in locals() and isinstance(rewards, torch.Tensor) else 1, device=self.device, dtype=self.float)
-
 
         flag = self.loss_type
 
@@ -1228,7 +1266,6 @@ class GFlowNetAgent:
             print("警告: 未提供batch对象，使用简化的损失计算")
             
             # 计算先验相似度得分
-            sim_scores = []
             if hasattr(self, 'prior_json_path') and self.prior_json_path:
                 df_path = self.df_path
                 df = pd.read_csv(df_path)
@@ -1237,17 +1274,12 @@ class GFlowNetAgent:
                 feature_names = df.columns.tolist()
                 bounds = [(df[feature].min(), df[feature].max()) for feature in feature_names]
                 
-                for tree in samples:
-                    tree_numerical_list = tree.cpu().numpy().tolist() if isinstance(tree, torch.Tensor) else tree
-                    sim_scores.append(compare_trees_average(
-                        tree1=tree_numerical_list,
-                        trees_file_path=self.prior_json_path,
-                        feature_names=feature_names,
-                        classes_=classes_,
-                        bounds=bounds,
-                        comp_dist=False,
-                        dist_weight=0.2
-                    ))
+                # 使用并行计算相似度
+                sim_scores = self.parallel_calculate_similarity(
+                    samples, self.prior_json_path, feature_names, classes_, bounds
+                )
+            else:
+                sim_scores = []
                     
             if sim_scores:
                 similarity_tensor = torch.tensor(sim_scores, device=self.device, dtype=self.float)
@@ -1317,17 +1349,10 @@ class GFlowNetAgent:
                 feature_names = df.columns.tolist()
                 bounds = [(df[feature].min(), df[feature].max()) for feature in feature_names]
                 
-                for tree in samples:
-                    tree_numerical_list = tree.cpu().numpy().tolist() if isinstance(tree, torch.Tensor) else tree
-                    sim_scores.append(compare_trees_average(
-                        tree1=tree_numerical_list,
-                        trees_file_path=self.prior_json_path,
-                        feature_names=feature_names,
-                        classes_=classes_,
-                        bounds=bounds,
-                        comp_dist=False,
-                        dist_weight=0.2
-                    ))
+                # 使用并行计算相似度
+                sim_scores = self.parallel_calculate_similarity(
+                    samples, self.prior_json_path, feature_names, classes_, bounds
+                )
                     
             if sim_scores:
                 similarity_tensor = torch.tensor(sim_scores, device=self.device, dtype=self.float)
