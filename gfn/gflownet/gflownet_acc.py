@@ -627,7 +627,7 @@ class GFlowNetAgent:
         # 获取CPU核心数，保留一个核心给主线程
         n_workers = max(1, os.cpu_count() - 1)
         # 限制最大进程数
-        n_workers = min(n_workers, len(trees), 32)
+        # n_workers = min(n_workers, len(trees), 32)
         
         print(f"使用 {n_workers} 个进程并行计算批次中 {len(trees)} 棵树的相似度...")
         
@@ -746,11 +746,7 @@ class GFlowNetAgent:
         if sim_scores:
             similarity_tensor = torch.tensor(sim_scores, device=self.device, dtype=self.float)
             mean_similarity = similarity_tensor.mean()
-            regular_term = nn.functional.sigmoid(10 * similarity_tensor)
-        else:
-            # 处理无相似度分数的情况
-            mean_similarity = torch.tensor(0.0, device=self.device, dtype=self.float)
-            regular_term = torch.ones(rewards.shape[0] if 'rewards' in locals() and isinstance(rewards, torch.Tensor) else 1, device=self.device, dtype=self.float)
+            regular_term = similarity_tensor
 
         flag = self.loss_type
 

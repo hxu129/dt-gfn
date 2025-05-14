@@ -11,16 +11,16 @@ defaults:
 device: gpu
 float_precision: 32
 n_samples: 1
-SAVE: True
+SAVE: False
 
 # Environment
 env:
   _target_: gflownet.envs.tree_acc.Tree 
-  dataset: breast_cancer
+  dataset: syn
   split_seed: 1
   results_path: "eval_results" # Path for saving evaluation results
   data_path: ${user.data.root}/${env.dataset}/${env.dataset}_${env.split_seed}.csv # Add desired data path
-  max_depth: 5
+  max_depth: 6
   continuous: False
   dirichlet: True
   mask_redundant_choices: True
@@ -53,7 +53,7 @@ gflownet:
     lr_z_mult: 100
     n_train_steps: 300
     lr_decay_period: 1000
-  loss_type: data # data, prior, data_prior
+  loss_type: prior # data, prior, data_prior
   Lambda: 1
   prior_json_path: ${user.data.root}/${env.dataset}/${env.dataset}_prior_trees_for_compare.json
   df_path: ${user.data.root}/${env.dataset}/${env.dataset}_${env.split_seed}.csv
@@ -83,12 +83,12 @@ proxy:
 logger:
   lightweight: True
   project_name: "RF-GFN"
-  run_name: ${env.dataset}_${gflownet.loss_type}_L=${gflownet.Lambda}_${env.split_seed}_depth=${env.max_depth}_PP=${proxy.alpha}/${proxy.alpha_value}_SP=${proxy.use_prior}_${n_samples} # Default wandb name
+  run_name: ${env.dataset}_${gflownet.loss_type}_few_shot_L=${gflownet.Lambda}_${env.split_seed}_depth=${env.max_depth}_PP=${proxy.alpha}/${proxy.alpha_value}_SP=${proxy.use_prior}_${n_samples} # Default wandb name
   tags:
     - gflownet
   test:
     period: 2
-    n: 25
+    n: 100
     sort_by_loss: False
     use_full_loss_calculation: True
   checkpoints:
